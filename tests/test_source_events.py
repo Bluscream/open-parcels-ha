@@ -118,7 +118,39 @@ async def test_rename_reaches_the_device_but_keeps_a_user_name(
 async def test_idle_source_shows_idle_with_its_reason(
     hass: HomeAssistant, loaded: MockConfigEntry, stream: FakeStream
 ) -> None:
-    """An OK source whose run did nothing on purpose is "idle", the detail says why."""
+    """The server's "idle" state shows as idle, the detail says why."""
+    reason = "Public tracking off: nothing to look up."
+    stream.push(
+        "source.run_finished",
+        _snapshot(
+            payloads.SOURCE_GLS,
+            "gls",
+            "GLS (99999)",
+            state="idle",
+            detail=reason,
+            ok=True,
+        ),
+        "63",
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get("sensor.gls_99999_source_state")
+    assert state.state == "idle"
+    assert state.attributes["detail"] == reason
+
+    # The next real success is "ok" again.
+    stream.push(
+        "source.run_finished",
+        _snapshot(payloads.SOURCE_GLS, "gls", "GLS (99999)", ok=True),
+        "64",
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.gls_99999_source_state").state == "ok"
+
+
+async def test_older_server_idle_is_read_from_the_detail(
+    hass: HomeAssistant, loaded: MockConfigEntry, stream: FakeStream
+) -> None:
+    """A server without the idle state sends "ok" plus a reason: still idle."""
     reason = "Public tracking off: nothing to look up."
     stream.push(
         "source.run_finished",
@@ -126,6 +158,4 @@ async def test_idle_source_shows_idle_with_its_reason(
         "63",
     )
     await hass.async_block_till_done()
-    state = hass.states.get("sensor.gls_99999_source_state")
-    assert state.state == "idle"
-    assert state.attributes["detail"] == reason
+    assert hass.states.get("sensor.gls_99999_source_state").state == "idle"

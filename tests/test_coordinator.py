@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
+import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.open_parcels.api import OpenParcelsConnectionError
@@ -347,9 +348,15 @@ async def test_removed_source_drops_device_and_rehomes_its_parcels(
 
 
 async def test_resync_removes_what_the_server_no_longer_has(
-    hass: HomeAssistant, loaded: MockConfigEntry, client: MagicMock
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    client: MagicMock,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A periodic resync drops vanished sources (device) and parcels (entity)."""
+    """A periodic resync drops vanished sources (device) and parcels (entity).
+
+    The device is removed through the supported API: no deprecation report.
+    """
     client.async_get_sources.side_effect = lambda: [
         dict(s) for s in payloads.SOURCES if s["id"] != payloads.SOURCE_GLS
     ]
@@ -360,6 +367,11 @@ async def test_resync_removes_what_the_server_no_longer_has(
     await hass.async_block_till_done()
     gls_identifier = (DOMAIN, f"{loaded.entry_id}_source_{payloads.SOURCE_GLS}")
     assert find_device(hass, loaded.entry_id, gls_identifier) is None
+    assert not any(
+        gls_identifier in device.identifiers
+        for device in dr.async_get(hass).devices.values()
+    )
+    assert "remove_config_entry_id" not in caplog.text
     assert hass.states.get("device_tracker.gls_99999_parcel_test0000000002") is None
     assert hass.states.get("sensor.open_parcels_incoming_parcels").state == "1"
 

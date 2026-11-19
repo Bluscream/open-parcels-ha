@@ -241,12 +241,16 @@ class SourceStateSensor(_SourceEntity, SensorEntity):
     def native_value(self) -> str | None:
         """The state, or None for a value this version does not know.
 
-        An OK source with a detail other than "not run yet" ran but had nothing
-        it could do (DPD with public tracking off): that is "idle", not "ok".
+        The server reports "idle" for a source that ran but had nothing it could
+        do (DPD with public tracking off). Older servers report that as "ok" with
+        a detail other than "not run yet"; that still reads as "idle".
         """
         state = self._source.get("state")
         detail = self._source.get("state_detail")
-        if state == SourceState.OK and detail and detail != NOT_RUN_YET_DETAIL:
+        legacy_idle = (
+            state == SourceState.OK and detail and detail != NOT_RUN_YET_DETAIL
+        )
+        if legacy_idle:
             return SourceState.IDLE.value
         return state if state in self._attr_options else None
 

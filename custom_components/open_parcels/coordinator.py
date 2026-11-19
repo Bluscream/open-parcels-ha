@@ -447,11 +447,11 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
         wanted = {
             source_identifier(entry.entry_id, sid) for sid in self.data.sources
         } | {hub_identifier(entry.entry_id)}
+        # A device belongs to exactly one config entry, so one this entry no longer
+        # wants is removed outright (remove_config_entry_id breaks in HA 2027.8).
         for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
             if not device.identifiers & wanted:
-                devices.async_update_device(
-                    device.id, remove_config_entry_id=entry.entry_id
-                )
+                devices.async_remove_device(device.id)
 
     # ------------------------------------------------------------ the stream
 

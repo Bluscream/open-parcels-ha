@@ -52,7 +52,8 @@ class SourceState(StrEnum):
     NEEDS_SIGN_IN = "needs_sign_in"
     ERROR = "error"
     DISABLED = "disabled"
-    # Not a server state: an OK source whose run deliberately did nothing.
+    # The last run deliberately did nothing; the detail says why. Servers before
+    # this state existed report it as "ok" with a detail (see NOT_RUN_YET_DETAIL).
     IDLE = "idle"
 
 
@@ -113,8 +114,9 @@ SOURCE_REMOVED_EVENT = "source.removed"
 SOURCE_SNAPSHOT_EVENTS = frozenset(
     {"source.added", "source.updated", "source.run_finished"}
 )
-# The server's detail for a source nothing has judged yet. Any other detail on an
-# OK source means it ran but had nothing it could do: the sensor shows "idle".
+# The server's detail for a source nothing has judged yet. On older servers, which
+# have no "idle" state, any other detail on an OK source means it ran but had
+# nothing it could do: the sensor then shows "idle" too.
 NOT_RUN_YET_DETAIL = "Not run yet."
 # Stream control messages: both carry the server's current sequence as their id.
 # `ready` opens a stream sent without Last-Event-ID; `resync` says the id sent
