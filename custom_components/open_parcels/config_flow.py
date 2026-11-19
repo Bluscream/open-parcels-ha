@@ -105,7 +105,8 @@ class OpenParcelsConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             url = normalize_url(user_input[CONF_URL])
-            await self.async_set_unique_id(url)
+            # A flow the user started takes precedence over a leftover one for the same server.
+            await self.async_set_unique_id(url, raise_on_progress=False)
             self._abort_if_unique_id_configured()
             error = await self._validate(url, user_input[CONF_API_TOKEN])
             if error is None:
