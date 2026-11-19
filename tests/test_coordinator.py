@@ -6,6 +6,7 @@ import json
 from unittest.mock import MagicMock
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.open_parcels.api import OpenParcelsConnectionError
@@ -15,6 +16,7 @@ from custom_components.open_parcels.coordinator import (
     _position_from_live,
 )
 from custom_components.open_parcels.device import find_device
+from custom_components.open_parcels.parcels import to_suite_parcel
 
 from . import payloads
 from .conftest import FakeStream, events
@@ -277,6 +279,102 @@ async def test_views_before_first_refresh(
     assert coordinator.visible_parcel_ids() == set()
     assert coordinator.courier_parcel_ids() == set()
     coordinator.async_sync_registry()
+
+
+async def test_deleted_parcel_drops_entity_and_counts(
+    hass: HomeAssistant, loaded: MockConfigEntry, stream: FakeStream
+) -> None:
+    """parcel.deleted takes the parcel away at once, no refresh button needed."""
+    fired = events(hass, f"{DOMAIN}_parcel_deleted")
+    assert hass.states.get("sensor.open_parcels_incoming_parcels").state == "2"
+    stream.push("parcel.deleted", json.dumps({"parcel": _parcel(1)}), "90")
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.gls_99999_parcel_test0000000002") is None
+    assert hass.states.get("sensor.open_parcels_incoming_parcels").state == "1"
+    assert len(fired) == 1
+
+
+async def test_removed_source_drops_device_and_rehomes_its_parcels(
+    hass: HomeAssistant, loaded: MockConfigEntry, stream: FakeStream
+) -> None:
+    """source.removed removes the device; its parcels move to the hub."""
+    fired = events(hass, f"{DOMAIN}_source_removed")
+    dhl_identifier = (DOMAIN, f"{loaded.entry_id}_source_{payloads.SOURCE_DHL}")
+    dhl = find_device(hass, loaded.entry_id, dhl_identifier)
+    assert dhl is not None
+    stream.push(
+        "source.removed",
+        json.dumps(
+            {
+                "source": {"id": payloads.SOURCE_DHL, "plugin": "dhl", "label": "x"},
+                "merged_into": None,
+            }
+        ),
+        "91",
+    )
+    await hass.async_block_till_done()
+    assert find_device(hass, loaded.entry_id, dhl_identifier) is None
+    hub = find_device(hass, loaded.entry_id, (DOMAIN, loaded.entry_id))
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{loaded.entry_id}_parcel_{payloads.PARCEL_A}"
+    )
+    assert entity_id is not None
+    assert er.async_get(hass).async_get(entity_id).device_id == hub.id
+    assert fired[0].data["device_id"] == dhl.id
+    assert fired[0].data["merged_into"] is None
+
+
+async def test_resync_removes_what_the_server_no_longer_has(
+    hass: HomeAssistant, loaded: MockConfigEntry, client: MagicMock
+) -> None:
+    """A periodic resync drops vanished sources (device) and parcels (entity)."""
+    client.async_get_sources.side_effect = lambda: [
+        dict(s) for s in payloads.SOURCES if s["id"] != payloads.SOURCE_GLS
+    ]
+    client.async_get_parcels.side_effect = lambda **_: [
+        p for p in payloads.parcels() if p["id"] != payloads.PARCEL_B
+    ]
+    await loaded.runtime_data.coordinator.async_refresh()
+    await hass.async_block_till_done()
+    gls_identifier = (DOMAIN, f"{loaded.entry_id}_source_{payloads.SOURCE_GLS}")
+    assert find_device(hass, loaded.entry_id, gls_identifier) is None
+    assert hass.states.get("sensor.gls_99999_parcel_test0000000002") is None
+    assert hass.states.get("sensor.open_parcels_incoming_parcels").state == "1"
+
+
+async def test_source_removed_without_data_or_id_is_ignored(
+    hass: HomeAssistant, loaded: MockConfigEntry, stream: FakeStream, client: MagicMock
+) -> None:
+    """A malformed removal changes nothing; a merge into an unseen source resyncs."""
+    before = client.async_get_sources.await_count
+    stream.push("source.removed", json.dumps({"source": "nope"}))
+    await hass.async_block_till_done()
+    assert client.async_get_sources.await_count == before
+    stream.push(
+        "source.removed",
+        json.dumps(
+            {"source": {"id": payloads.SOURCE_GLS}, "merged_into": "unseen-source"}
+        ),
+    )
+    await hass.async_block_till_done()
+    assert client.async_get_sources.await_count > before
+
+
+def test_carrier_status_comes_from_the_server() -> None:
+    """The effective status is `status`; the carrier's own value stays visible."""
+    suite = to_suite_parcel(
+        _parcel(
+            0,
+            status="delivered",
+            delivered=True,
+            manual_status="delivered",
+            carrier_status="out_for_delivery",
+        ),
+        include_history=False,
+    )
+    assert suite["status"] == "delivered"
+    assert suite["delivered"] is True
+    assert suite["carrier_status"] == "out_for_delivery"
 
 
 def test_position_needs_numeric_coordinates() -> None:

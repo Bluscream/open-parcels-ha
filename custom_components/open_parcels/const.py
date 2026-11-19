@@ -80,9 +80,14 @@ SERVER_EVENT_SUFFIXES: dict[str, str] = {
     "parcel.outgoing_delivered": "outgoing_parcel_delivered",
     "parcel.live_updated": "parcel_live_updated",
     "parcel.removed": "parcel_removed",
+    "parcel.deleted": "parcel_deleted",
     "source.state_changed": "source_state_changed",
 }
 LIVE_POSITION_EVENT = "parcel.live_position"
+
+# Source removed (deleted, or merged into another): fired on the bus, but not a device
+# trigger, because the device it would belong to is removed with it.
+SOURCE_REMOVED_EVENT = "source.removed"
 
 # Dispatcher signal for courier positions, formatted with the entry id.
 SIGNAL_LIVE_POSITION = f"{DOMAIN}_live_position_{{}}"

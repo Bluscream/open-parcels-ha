@@ -121,7 +121,13 @@ Every server event is fired on the Home Assistant bus as `open_parcels_<type>`:
 | `parcel.outgoing_delivered` | `open_parcels_outgoing_parcel_delivered` |
 | `parcel.live_updated` | `open_parcels_parcel_live_updated` |
 | `parcel.removed` | `open_parcels_parcel_removed` |
+| `parcel.deleted` | `open_parcels_parcel_deleted` (deleted on the server, or merged into another parcel: `merged_into`) |
 | `source.state_changed` | `open_parcels_source_state_changed` (`source_id`, `plugin`, `label`, `old_state`, `new_state`, `detail`) |
+| `source.removed` | `open_parcels_source_removed` (`source_id`, `plugin`, `label`, `merged_into`); bus event only, no device trigger |
+
+A deleted parcel or source disappears at once: its entities, and the source's device, are removed
+from the registries. Parcels the removed source owned move to their next source's device (or the
+hub). The periodic resync removes anything else the server no longer has.
 
 Parcel events carry the parcel attributes listed above (without `raw`), the server's `old_*` and
 `new_*` fields, `device_id` (the parcel's source device) and `hub_device_id`. Device triggers of

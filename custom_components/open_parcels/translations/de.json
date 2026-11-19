@@ -160,6 +160,7 @@
       "outgoing_parcel_delivered": "Eine ausgehende Sendung wurde zugestellt",
       "parcel_live_updated": "Die Live-Verfolgung einer Sendung hat sich geändert",
       "parcel_removed": "Eine Sendung wurde entfernt",
+      "parcel_deleted": "Eine Sendung wurde gelöscht",
       "source_state_changed": "Der Zustand einer Quelle hat sich geändert"
     }
   },

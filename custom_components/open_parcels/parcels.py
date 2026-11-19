@@ -133,7 +133,9 @@ def to_suite_parcel(
         "carrier_id": carrier_id or None,
         "direction": parcel.get("direction") or "incoming",
         "label": parcel.get("label"),
-        "carrier_status": parcel.get("status"),
+        # The server's `status` is already the effective one; older servers lack
+        # `carrier_status` and send the carrier's value as `status`.
+        "carrier_status": parcel.get("carrier_status", parcel.get("status")),
         "manual_status": parcel.get("manual_status"),
         "items": list(parcel.get("items") or []),
         "order": dict(order) if isinstance(order, Mapping) else None,

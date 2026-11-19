@@ -160,6 +160,7 @@
       "outgoing_parcel_delivered": "An outgoing parcel was delivered",
       "parcel_live_updated": "A parcel's live courier tracking changed",
       "parcel_removed": "A parcel was removed",
+      "parcel_deleted": "A parcel was deleted",
       "source_state_changed": "A source's state changed"
     }
   },

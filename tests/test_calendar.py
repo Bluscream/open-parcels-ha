@@ -65,3 +65,33 @@ async def test_calendar_entry_edge_cases(hass: HomeAssistant) -> None:
         {"start": "2999-01-03T00:00:00", "end": "2999-01-03T00:00:00", "all_day": True}
     )
     assert same is not None and same.end > same.start
+
+
+async def test_all_day_uses_the_server_local_days(hass: HomeAssistant) -> None:
+    """A date-only delivery lands on the server's day, whatever HA's zone says."""
+    await hass.config.async_set_time_zone("UTC")
+    event = to_calendar_event(
+        {
+            # Midnight in the server's zone: the day before in UTC.
+            "start": "2999-01-02T23:00:00Z",
+            "end": "2999-01-03T23:00:00Z",
+            "all_day": True,
+            "start_date": "2999-01-03",
+            "end_date": "2999-01-04",
+            "kind": "delivered",
+            "title": "Lamp",
+        }
+    )
+    assert event is not None
+    assert event.start == date(2999, 1, 3)
+    assert event.end == date(2999, 1, 4)
+    broken = to_calendar_event(
+        {
+            "start": "2999-01-03T00:00:00Z",
+            "end": "2999-01-04T00:00:00Z",
+            "all_day": True,
+            "start_date": "not a date",
+            "end_date": None,
+        }
+    )
+    assert broken is not None and broken.start == date(2999, 1, 3)

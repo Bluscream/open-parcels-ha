@@ -33,6 +33,7 @@ from .const import (
     PARCEL_LIST_LIMIT,
     SERVER_EVENT_SUFFIXES,
     SIGNAL_LIVE_POSITION,
+    SOURCE_REMOVED_EVENT,
 )
 from .device import find_device, hub_identifier, source_device_info, source_identifier
 from .parcels import (
@@ -54,9 +55,13 @@ _CALENDAR_EVENTS = frozenset(
         "parcel.outgoing_registered",
         "parcel.outgoing_delivered",
         "parcel.removed",
+        "parcel.deleted",
         "parcel.status_changed",
     }
 )
+
+# Parcel events after which the parcel is gone from the server's lists.
+_GONE_EVENTS = frozenset({"parcel.removed", "parcel.deleted"})
 
 
 @dataclass(slots=True)
@@ -300,6 +305,30 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
             if hub is not None and device.via_device_id != hub.id:
                 devices.async_update_device(device.id, via_device_id=hub.id)
 
+        visible = self.visible_parcel_ids()
+        couriers = self.courier_parcel_ids()
+        entities = er.async_get(self.hass)
+        parcel_prefix = f"{entry.entry_id}_parcel_"
+        courier_prefix = f"{entry.entry_id}_courier_"
+        for entity in er.async_entries_for_config_entry(entities, entry.entry_id):
+            uid = entity.unique_id
+            if uid.startswith(parcel_prefix):
+                parcel_id, keep = uid[len(parcel_prefix) :], visible
+            elif uid.startswith(courier_prefix):
+                parcel_id, keep = uid[len(courier_prefix) :], couriers
+            else:
+                continue
+            if parcel_id not in keep:
+                entities.async_remove(entity.entity_id)
+                continue
+            # A parcel whose owning source was removed or changed moves to its new
+            # owner's device first, so removing the old device does not take it along.
+            owner = self.device_id_for_source(
+                owner_source_id(self.data.parcels.get(parcel_id) or {})
+            )
+            if owner is not None and entity.device_id != owner:
+                entities.async_update_entity(entity.entity_id, device_id=owner)
+
         wanted = {
             source_identifier(entry.entry_id, sid) for sid in self.data.sources
         } | {hub_identifier(entry.entry_id)}
@@ -308,22 +337,6 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
                 devices.async_update_device(
                     device.id, remove_config_entry_id=entry.entry_id
                 )
-
-        visible = self.visible_parcel_ids()
-        couriers = self.courier_parcel_ids()
-        entities = er.async_get(self.hass)
-        parcel_prefix = f"{entry.entry_id}_parcel_"
-        courier_prefix = f"{entry.entry_id}_courier_"
-        for entity in er.async_entries_for_config_entry(entities, entry.entry_id):
-            uid = entity.unique_id
-            if (
-                uid.startswith(parcel_prefix)
-                and uid[len(parcel_prefix) :] not in visible
-            ) or (
-                uid.startswith(courier_prefix)
-                and uid[len(courier_prefix) :] not in couriers
-            ):
-                entities.async_remove(entity.entity_id)
 
     # ------------------------------------------------------------ the stream
 
@@ -351,6 +364,10 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
 
         if message.event == LIVE_POSITION_EVENT:
             self._apply_position(payload)
+            return
+        if message.event == SOURCE_REMOVED_EVENT and self.data is not None:
+            self._apply_source_removed(payload)
+            self._calendar_debouncer.async_schedule_call()
             return
         if message.event not in SERVER_EVENT_SUFFIXES or self.data is None:
             return
@@ -412,13 +429,52 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
         )
         self.async_set_updated_data(self.data)
 
+    def _apply_source_removed(self, payload: dict[str, Any]) -> None:
+        """Drop a source the server deleted or merged, with its device.
+
+        Its parcels lose the link; the registry sync then removes the device and
+        reloads the entry, so parcels it owned come back on their new owner.
+        """
+        raw_source = payload.get("source")
+        source: dict[str, Any] = raw_source if isinstance(raw_source, dict) else {}
+        source_id = str(source.get("id") or "")
+        if not source_id:
+            return
+        # Read the device before the registry sync removes it.
+        device_id = self.device_id_for_source(source_id)
+        self.data.sources.pop(source_id, None)
+        merged_into = payload.get("merged_into")
+        for pid, parcel in list(self.data.parcels.items()):
+            refs = parcel.get("sources") or []
+            kept = [
+                ref
+                for ref in refs
+                if not (isinstance(ref, Mapping) and ref.get("source_id") == source_id)
+            ]
+            if len(kept) != len(refs):
+                self.data.parcels[pid] = {**parcel, "sources": kept}
+        if isinstance(merged_into, str) and merged_into not in self.data.sources:
+            self.hass.async_create_task(self.async_request_refresh())
+        self.hass.bus.async_fire(
+            f"{DOMAIN}_source_removed",
+            {
+                "source_id": source_id,
+                "plugin": source.get("plugin"),
+                "label": source.get("label"),
+                "merged_into": merged_into,
+                "device_id": device_id,
+                "hub_device_id": self.device_id_for_source(None),
+            },
+        )
+        self.async_set_updated_data(self.data)
+
     def _apply_parcel_event(self, event_type: str, payload: dict[str, Any]) -> None:
         parcel = payload.get("parcel")
         if not isinstance(parcel, dict) or not parcel.get("id"):
             return
         parcel_id = str(parcel["id"])
         previous = self.data.parcels.get(parcel_id)
-        if event_type == "parcel.removed":
+        if event_type in _GONE_EVENTS:
             self.data.parcels.pop(parcel_id, None)
             self.positions.pop(parcel_id, None)
         else:

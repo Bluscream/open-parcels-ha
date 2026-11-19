@@ -31,6 +31,16 @@ async def async_setup_entry(
     async_add_entities([DeliveriesCalendar(entry.runtime_data.coordinator)])
 
 
+def _local_days(entry: Mapping[str, Any]) -> tuple[date, date] | None:
+    """The all-day entry's `start_date` and exclusive `end_date`, when the server sends them."""
+    try:
+        start = date.fromisoformat(str(entry["start_date"]))
+        end = date.fromisoformat(str(entry["end_date"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (start, end) if end > start else None
+
+
 def to_calendar_event(entry: Mapping[str, Any]) -> CalendarEvent | None:
     """Turn one server calendar entry into a CalendarEvent."""
     start = parse_iso(entry.get("start"))
@@ -47,9 +57,14 @@ def to_calendar_event(entry: Mapping[str, Any]) -> CalendarEvent | None:
     description = "\n".join(line for line in lines if line) or None
     event_start: date | datetime = start
     event_end: date | datetime = end
-    if entry.get("all_day"):
-        # The server's whole-day windows end at midnight (exclusive) or at the
-        # last second of the day (inclusive); both become an exclusive end date.
+    days = _local_days(entry)
+    if entry.get("all_day") and days is not None:
+        # The server's own local days, so Home Assistant's time zone cannot shift them.
+        event_start, event_end = days
+    elif entry.get("all_day"):
+        # Older servers send instants only. Their whole-day windows end at midnight
+        # (exclusive) or at the last second of the day (inclusive); both become an
+        # exclusive end date.
         event_start = dt_util.as_local(start).date()
         event_end = (dt_util.as_local(end) - timedelta(seconds=1)).date() + timedelta(
             days=1
