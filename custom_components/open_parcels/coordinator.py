@@ -30,6 +30,7 @@ from .const import (
     DOMAIN,
     LIVE_POSITION_EVENT,
     LIVE_TRACKING_STATES,
+    OPEN_STATUSES,
     PARCEL_LIST_LIMIT,
     READY_EVENT,
     RESYNC_EVENT,
@@ -41,7 +42,6 @@ from .const import (
 from .device import find_device, hub_identifier, source_device_info, source_identifier
 from .parcels import (
     apply_delivered_filter,
-    is_delivered,
     owner_source_id,
     sort_parcels_by_ts,
     to_suite_parcel,
@@ -75,6 +75,18 @@ class CourierPosition:
     longitude: float
     accuracy: float | None
     position_at: str | None
+    stops_away: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ParcelPosition:
+    """Where a parcel's tracker points: the live courier, or its latest scan."""
+
+    latitude: float
+    longitude: float
+    accuracy: float
+    at: str | None
+    source: str
     stops_away: int | None
 
 
@@ -218,25 +230,46 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
             ],
         }
 
-    def visible_parcel_ids(self) -> set[str]:
-        """Parcels that get an entity: everything active plus the kept deliveries."""
+    def tracked_parcel_ids(self) -> set[str]:
+        """Parcels that get a tracker entity: the open ones (see OPEN_STATUSES).
+
+        Delivered, finished and unknown parcels only appear in the list sensors.
+        """
         buckets = self.buckets()
         return {
             str(p["id"])
-            for key in ("incoming", "outgoing", "delivered", "outgoing_delivered")
+            for key in ("incoming", "outgoing")
             for p in buckets[key]
-            if p.get("id")
+            if p.get("id") and p.get("status") in OPEN_STATUSES
         }
 
-    def courier_parcel_ids(self) -> set[str]:
-        """Active parcels that have a live courier session."""
-        if not self.data:
-            return set()
-        return {
-            pid
-            for pid, raw in self.data.parcels.items()
-            if raw.get("live") and not is_delivered(raw)
-        }
+    def parcel_position(self, parcel_id: str) -> ParcelPosition | None:
+        """Where a parcel is: the live courier first, else its latest scan with a place."""
+        courier = self.positions.get(parcel_id)
+        if courier is not None:
+            return ParcelPosition(
+                latitude=courier.latitude,
+                longitude=courier.longitude,
+                accuracy=courier.accuracy or 0,
+                at=courier.position_at,
+                source="courier",
+                stops_away=courier.stops_away,
+            )
+        raw = (self.data.parcels if self.data else {}).get(parcel_id) or {}
+        location = raw.get("location") or {}
+        latitude, longitude = location.get("latitude"), location.get("longitude")
+        if not isinstance(latitude, int | float) or not isinstance(
+            longitude, int | float
+        ):
+            return None
+        return ParcelPosition(
+            latitude=float(latitude),
+            longitude=float(longitude),
+            accuracy=0,
+            at=location.get("at"),
+            source="scan",
+            stops_away=None,
+        )
 
     def device_id_for_source(self, source_id: str | None) -> str | None:
         """Device registry id of a source's device, or the hub's for None."""
@@ -317,20 +350,24 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
             if hub is not None and device.via_device_id != hub.id:
                 devices.async_update_device(device.id, via_device_id=hub.id)
 
-        visible = self.visible_parcel_ids()
-        couriers = self.courier_parcel_ids()
+        tracked = self.tracked_parcel_ids()
         entities = er.async_get(self.hass)
         parcel_prefix = f"{entry.entry_id}_parcel_"
         courier_prefix = f"{entry.entry_id}_courier_"
         for entity in er.async_entries_for_config_entry(entities, entry.entry_id):
             uid = entity.unique_id
-            if uid.startswith(parcel_prefix):
-                parcel_id, keep = uid[len(parcel_prefix) :], visible
-            elif uid.startswith(courier_prefix):
-                parcel_id, keep = uid[len(courier_prefix) :], couriers
-            else:
+            # Earlier versions had a status sensor per parcel and a separate courier
+            # tracker; one tracker per open parcel replaces both.
+            legacy = uid.startswith(courier_prefix) or (
+                entity.domain == "sensor" and uid.startswith(parcel_prefix)
+            )
+            if legacy:
+                entities.async_remove(entity.entity_id)
                 continue
-            if parcel_id not in keep:
+            if not uid.startswith(parcel_prefix):
+                continue
+            parcel_id = uid[len(parcel_prefix) :]
+            if parcel_id not in tracked:
                 entities.async_remove(entity.entity_id)
                 continue
             # A parcel whose owning source was removed or changed moves to its new

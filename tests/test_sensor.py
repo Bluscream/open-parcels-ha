@@ -87,7 +87,7 @@ async def test_parcel_sensor_has_suite_shape(
     hass: HomeAssistant, loaded: MockConfigEntry
 ) -> None:
     """State is the status; the suite keys come first, in the suite's order."""
-    state = hass.states.get("sensor.dhl_germany_abc123_parcel_test0000000001")
+    state = hass.states.get("device_tracker.dhl_germany_abc123_parcel_test0000000001")
     assert state.state == "out_for_delivery"
     keys = [k for k in state.attributes if k in SUITE_KEYS]
     assert keys == SUITE_KEYS
@@ -122,7 +122,7 @@ async def test_history_option(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     client.async_get_parcels.assert_awaited_with(include_history=True, limit=1000)
-    state = hass.states.get("sensor.dhl_germany_abc123_parcel_test0000000001")
+    state = hass.states.get("device_tracker.dhl_germany_abc123_parcel_test0000000001")
     assert [h["raw_status"] for h in state.attributes["history"]] == [
         "Sorted",
         "With the courier",
@@ -151,4 +151,7 @@ async def test_delivered_filter_by_count(
     await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
     assert hass.states.get("sensor.open_parcels_delivered_parcels").state == "0"
-    assert hass.states.get("sensor.dhl_germany_abc123_parcel_test0000000003") is None
+    assert (
+        hass.states.get("device_tracker.dhl_germany_abc123_parcel_test0000000003")
+        is None
+    )

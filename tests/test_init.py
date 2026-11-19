@@ -60,14 +60,23 @@ async def test_parcel_entities_land_on_their_source_device(
         device = dr.async_get(hass).async_get(entity.device_id or "")
         return device.name if device else None
 
-    assert device_name("sensor.dhl_germany_abc123_parcel_test0000000001") == (
+    assert device_name("device_tracker.dhl_germany_abc123_parcel_test0000000001") == (
         "DHL Germany (abc123)"
     )
-    assert device_name("sensor.gls_99999_parcel_test0000000002") == "GLS (99999)"
-    assert device_name("sensor.dhl_germany_abc123_parcel_test0000000003") == (
-        "DHL Germany (abc123)"
+    assert (
+        device_name("device_tracker.gls_99999_parcel_test0000000002") == "GLS (99999)"
     )
-    assert device_name("sensor.open_parcels_parcel_test0000000004") == "Open Parcels"
+    assert (
+        device_name("device_tracker.open_parcels_parcel_test0000000004")
+        == "Open Parcels"
+    )
+    # A delivered parcel has no entity of its own; it is listed by the sensors.
+    assert (
+        entities.async_get("device_tracker.dhl_germany_abc123_parcel_test0000000003")
+        is None
+    )
+    delivered = hass.states.get("sensor.dhl_germany_abc123_delivered_parcels")
+    assert delivered.attributes["parcel_ids"] == [payloads.PARCEL_C]
 
 
 async def test_setup_retries_when_server_unreachable(

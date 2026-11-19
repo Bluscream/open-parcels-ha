@@ -48,7 +48,8 @@ async def test_status_change_fires_event_and_updates(
     await hass.async_block_till_done()
 
     assert (
-        hass.states.get("sensor.gls_99999_parcel_test0000000002").state == "returning"
+        hass.states.get("device_tracker.gls_99999_parcel_test0000000002").state
+        == "returning"
     )
     assert len(fired) == 1
     data = fired[0].data
@@ -82,7 +83,8 @@ async def test_new_parcel_adds_entity(
     stream.push("parcel.registered", json.dumps({"parcel": parcel}), "42")
     await hass.async_block_till_done()
     assert (
-        hass.states.get("sensor.gls_99999_parcel_test0000000005").state == "registered"
+        hass.states.get("device_tracker.gls_99999_parcel_test0000000005").state
+        == "registered"
     )
     assert hass.states.get("sensor.open_parcels_incoming_parcels").state == "3"
     assert len(fired) == 1
@@ -95,9 +97,12 @@ async def test_removed_parcel_drops_entity(
     fired = events(hass, f"{DOMAIN}_parcel_removed")
     stream.push("parcel.removed", json.dumps({"parcel": _parcel(0)}), "43")
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.dhl_germany_abc123_parcel_test0000000001") is None
     assert (
-        hass.states.get("device_tracker.dhl_germany_abc123_courier_test0000000001")
+        hass.states.get("device_tracker.dhl_germany_abc123_parcel_test0000000001")
+        is None
+    )
+    assert (
+        hass.states.get("device_tracker.dhl_germany_abc123_parcel_test0000000001")
         is None
     )
     assert len(fired) == 1
@@ -172,7 +177,7 @@ async def test_delivered_and_delivery_time_and_outgoing_events(
     assert hass.states.get("sensor.open_parcels_delivered_parcels").state == "2"
     # Live session ended with the delivery: the courier tracker goes away.
     assert (
-        hass.states.get("device_tracker.dhl_germany_abc123_courier_test0000000001")
+        hass.states.get("device_tracker.dhl_germany_abc123_parcel_test0000000001")
         is None
     )
 
@@ -294,8 +299,7 @@ async def test_views_before_first_refresh(
     entry.add_to_hass(hass)
     coordinator = OpenParcelsCoordinator(hass, entry, client)
     assert coordinator.suite_parcel(payloads.PARCEL_A) is None
-    assert coordinator.visible_parcel_ids() == set()
-    assert coordinator.courier_parcel_ids() == set()
+    assert coordinator.tracked_parcel_ids() == set()
     coordinator.async_sync_registry()
 
 
@@ -307,7 +311,7 @@ async def test_deleted_parcel_drops_entity_and_counts(
     assert hass.states.get("sensor.open_parcels_incoming_parcels").state == "2"
     stream.push("parcel.deleted", json.dumps({"parcel": _parcel(1)}), "90")
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.gls_99999_parcel_test0000000002") is None
+    assert hass.states.get("device_tracker.gls_99999_parcel_test0000000002") is None
     assert hass.states.get("sensor.open_parcels_incoming_parcels").state == "1"
     assert len(fired) == 1
 
@@ -334,7 +338,7 @@ async def test_removed_source_drops_device_and_rehomes_its_parcels(
     assert find_device(hass, loaded.entry_id, dhl_identifier) is None
     hub = find_device(hass, loaded.entry_id, (DOMAIN, loaded.entry_id))
     entity_id = er.async_get(hass).async_get_entity_id(
-        "sensor", DOMAIN, f"{loaded.entry_id}_parcel_{payloads.PARCEL_A}"
+        "device_tracker", DOMAIN, f"{loaded.entry_id}_parcel_{payloads.PARCEL_A}"
     )
     assert entity_id is not None
     assert er.async_get(hass).async_get(entity_id).device_id == hub.id
@@ -356,7 +360,7 @@ async def test_resync_removes_what_the_server_no_longer_has(
     await hass.async_block_till_done()
     gls_identifier = (DOMAIN, f"{loaded.entry_id}_source_{payloads.SOURCE_GLS}")
     assert find_device(hass, loaded.entry_id, gls_identifier) is None
-    assert hass.states.get("sensor.gls_99999_parcel_test0000000002") is None
+    assert hass.states.get("device_tracker.gls_99999_parcel_test0000000002") is None
     assert hass.states.get("sensor.open_parcels_incoming_parcels").state == "1"
 
 

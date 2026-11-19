@@ -1,7 +1,9 @@
-"""Courier position for parcels with a live session: current position only.
+"""One tracker per open parcel: its status as state, its place on the map when known.
 
-The coordinates are kept out of the recorder, so Home Assistant stores no
-trail of where the courier has been.
+The position is the live courier's while a map session runs, else the latest
+carrier scan that had coordinates. Without either the tracker has no
+coordinates, and Home Assistant leaves it off the map. Positions are kept out
+of the recorder, so Home Assistant stores no trail of where a courier has been.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import OpenParcelsConfigEntry
 from .const import SIGNAL_LIVE_POSITION
-from .coordinator import CourierPosition, OpenParcelsCoordinator
+from .coordinator import OpenParcelsCoordinator, ParcelPosition
 from .entity import OpenParcelsEntity, async_add_dynamic, device_for_source
 
 PARALLEL_UPDATES = 0
@@ -26,42 +28,55 @@ async def async_setup_entry(
     entry: OpenParcelsConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Add a courier tracker whenever a parcel gets a live session."""
+    """Add a tracker whenever a parcel is open; the coordinator removes finished ones."""
     coordinator = entry.runtime_data.coordinator
     async_add_dynamic(
         coordinator,
         entry,
         async_add_entities,
-        coordinator.courier_parcel_ids,
-        lambda parcel_id: [CourierTracker(coordinator, parcel_id)],
+        coordinator.tracked_parcel_ids,
+        lambda parcel_id: [ParcelTracker(coordinator, parcel_id)],
     )
 
 
-class CourierTracker(OpenParcelsEntity, TrackerEntity):
-    """Where the courier carrying a parcel is right now."""
+class ParcelTracker(OpenParcelsEntity, TrackerEntity):
+    """One open parcel. State: its status key; attributes: the suite's parcel dict."""
 
-    _attr_translation_key = "courier"
+    _attr_translation_key = "parcel"
     _attr_source_type = SourceType.GPS
     _unrecorded_attributes = frozenset(
-        {"latitude", "longitude", "gps_accuracy", "position_at", "stops_away"}
+        {
+            "raw",
+            "history",
+            "items",
+            "live",
+            "lookup",
+            "order",
+            "latitude",
+            "longitude",
+            "gps_accuracy",
+            "position_at",
+            "position_source",
+            "stops_away",
+        }
     )
 
     def __init__(self, coordinator: OpenParcelsCoordinator, parcel_id: str) -> None:
-        """Place the tracker on the parcel's source device."""
-        super().__init__(coordinator, f"courier_{parcel_id}")
+        """Place the parcel on its source's device (the hub when it has none)."""
+        super().__init__(coordinator, f"parcel_{parcel_id}")
         self._parcel_id = parcel_id
         parcel = coordinator.suite_parcel(parcel_id) or {}
         self._attr_translation_placeholders = {
             "barcode": str(parcel.get("barcode") or parcel_id)
         }
         # The base class types device info as None, but a tracker may belong
-        # to a device; the courier belongs with its parcel's source.
+        # to a device; the parcel belongs with its source.
         self._attr_device_info = device_for_source(  # type: ignore[assignment]
             coordinator.config_entry, parcel.get("source_id")
         )
 
     async def async_added_to_hass(self) -> None:
-        """Also listen for position messages, which skip the coordinator."""
+        """Also listen for courier positions, which skip the coordinator."""
         await super().async_added_to_hass()
         self.async_on_remove(
             async_dispatcher_connect(
@@ -77,23 +92,32 @@ class CourierTracker(OpenParcelsEntity, TrackerEntity):
             self.async_write_ha_state()
 
     @property
-    def _position(self) -> CourierPosition | None:
-        return self.coordinator.positions.get(self._parcel_id)
+    def _position(self) -> ParcelPosition | None:
+        return self.coordinator.parcel_position(self._parcel_id)
 
     @property
     def available(self) -> bool:
-        """Available while the courier's position is known."""
-        return super().available and self._position is not None
+        """Unavailable once the parcel is gone."""
+        return (
+            super().available
+            and self.coordinator.suite_parcel(self._parcel_id) is not None
+        )
+
+    @property
+    def location_name(self) -> str | None:
+        """The parcel's status key (a manual status wins); it is the entity's state."""
+        parcel = self.coordinator.suite_parcel(self._parcel_id)
+        return str(parcel["status"]) if parcel else None
 
     @property
     def latitude(self) -> float | None:
-        """Courier latitude."""
+        """Latitude of the courier or the latest scan; None keeps it off the map."""
         position = self._position
         return position.latitude if position else None
 
     @property
     def longitude(self) -> float | None:
-        """Courier longitude."""
+        """Longitude of the courier or the latest scan."""
         position = self._position
         return position.longitude if position else None
 
@@ -101,17 +125,16 @@ class CourierTracker(OpenParcelsEntity, TrackerEntity):
     def location_accuracy(self) -> float:
         """Accuracy in metres (0 when unknown)."""
         position = self._position
-        return (position.accuracy or 0) if position else 0
+        return position.accuracy if position else 0
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Stops away and the time of the fix."""
-        position = self._position
+        """The suite's parcel keys, then where the position comes from."""
         parcel = self.coordinator.suite_parcel(self._parcel_id) or {}
-        live = parcel.get("live") or {}
+        position = self._position
         return {
-            "barcode": parcel.get("barcode"),
-            "live_state": live.get("state"),
-            "stops_away": position.stops_away if position else live.get("stops_away"),
-            "position_at": position.position_at if position else None,
+            **parcel,
+            "position_source": position.source if position else None,
+            "position_at": position.at if position else None,
+            "stops_away": position.stops_away if position else None,
         }

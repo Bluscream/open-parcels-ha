@@ -1,4 +1,8 @@
-"""Sensors: hub summaries, per-source summaries and diagnostics, one per parcel."""
+"""Sensors: hub summaries, per-source summaries and diagnostics.
+
+Parcels themselves are device trackers (device_tracker.py); delivered ones only
+appear here, in the list sensors' attributes.
+"""
 
 from __future__ import annotations
 
@@ -77,13 +81,6 @@ async def async_setup_entry(
         lambda: coordinator.data.sources if coordinator.data else (),
         _source_entities,
     )
-    async_add_dynamic(
-        coordinator,
-        entry,
-        async_add_entities,
-        coordinator.visible_parcel_ids,
-        lambda parcel_id: [ParcelSensor(coordinator, parcel_id)],
-    )
 
 
 def _suffix(source_id: str | None, key: str) -> str:
@@ -120,9 +117,13 @@ class ListSensor(OpenParcelsEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """The list itself and its breakdown per carrier."""
+        """The list itself, its parcel ids and its breakdown per carrier."""
         parcels = self._parcels()
-        return {"by_carrier": count_by_carrier(parcels), "parcels": parcels}
+        return {
+            "by_carrier": count_by_carrier(parcels),
+            "parcel_ids": [p["id"] for p in parcels if p.get("id")],
+            "parcels": parcels,
+        }
 
 
 class NextDeliverySensor(OpenParcelsEntity, SensorEntity):
@@ -254,43 +255,3 @@ class SourceStateSensor(_SourceEntity, SensorEntity):
             "next_run_at": source.get("next_run_at"),
             "last_ok_at": source.get("last_ok_at"),
         }
-
-
-class ParcelSensor(OpenParcelsEntity, SensorEntity):
-    """One parcel: its status as state, the suite's parcel dict as attributes."""
-
-    _attr_translation_key = "parcel"
-    _unrecorded_attributes = frozenset(
-        {"raw", "history", "items", "live", "lookup", "order"}
-    )
-
-    def __init__(self, coordinator: OpenParcelsCoordinator, parcel_id: str) -> None:
-        """Place the parcel on its source's device (the hub when it has none)."""
-        super().__init__(coordinator, f"parcel_{parcel_id}")
-        self._parcel_id = parcel_id
-        parcel = coordinator.suite_parcel(parcel_id) or {}
-        self._attr_translation_placeholders = {
-            "barcode": str(parcel.get("barcode") or parcel_id)
-        }
-        self._attr_device_info = device_for_source(
-            coordinator.config_entry, parcel.get("source_id")
-        )
-
-    @property
-    def available(self) -> bool:
-        """Unavailable once the parcel is gone."""
-        return (
-            super().available
-            and self.coordinator.suite_parcel(self._parcel_id) is not None
-        )
-
-    @property
-    def native_value(self) -> str | None:
-        """The parcel's status (a manual status wins)."""
-        parcel = self.coordinator.suite_parcel(self._parcel_id)
-        return parcel["status"] if parcel else None
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """The suite's parcel keys followed by this service's additions."""
-        return self.coordinator.suite_parcel(self._parcel_id) or {}

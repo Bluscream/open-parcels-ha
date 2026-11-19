@@ -74,8 +74,7 @@ name, the name is not repeated. It is linked to the hub (`via_device`).
 | `sensor.<device>_source_state` | `ok`, `needs_sign_in`, `error` or `disabled` (diagnostic), with `detail`, `plugin`, `kind`, `last_run_at`, `next_run_at`, `last_ok_at` |
 | `binary_sensor.<device>_problem` | on while the source needs a sign-in or fails (diagnostic) |
 | `button.<device>_refresh` | asks the server to run this source now |
-| `sensor.<device>_parcel_<barcode>` | one per parcel: its status |
-| `device_tracker.<device>_courier_<barcode>` | the courier's current position while a live session runs |
+| `device_tracker.<device>_parcel_<barcode>` | one per open parcel (announced, in transit, out for delivery, at a pickup point, returning, problem). State: the status key. On the map once its position is known: the live courier, else the latest scan with coordinates. Delivered and finished parcels get no entity; they are listed in the list sensors (`parcel_ids`, `parcels`). |
 
 A parcel belongs to the source that follows it as its primary source, then a hand-off, then a
 mailbox.
@@ -100,12 +99,14 @@ Active parcels and recently delivered ones (see *Delivered parcels* in the optio
 entities. An entity disappears when its parcel is delivered past the retention window, archived
 or removed.
 
-### Courier positions
+### Parcel positions
 
-`device_tracker` entities show where the courier is **right now**. Latitude, longitude, accuracy,
-the fix time and stops-away are kept out of the recorder, so Home Assistant stores no trail. The
-entity becomes unavailable when the session ends or the courier reaches the stop before yours. The
-server never publishes the position from that point on.
+A parcel tracker points at the courier **right now** while a live session runs, otherwise at the
+latest carrier scan that came with coordinates (`position_source`: `courier` or `scan`). Without
+either it has no coordinates and Home Assistant leaves it off the map; the entity stays, with its
+status as the state. Latitude, longitude, accuracy, the fix time and stops-away are kept out of the
+recorder, so Home Assistant stores no trail. The server stops publishing the courier's position
+once the courier reaches the stop before yours.
 
 ## Events and device triggers
 

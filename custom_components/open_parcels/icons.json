@@ -11,7 +11,7 @@
       "deliveries": { "default": "mdi:truck-delivery-outline" }
     },
     "device_tracker": {
-      "courier": { "default": "mdi:truck-fast" }
+      "parcel": { "default": "mdi:package-variant-closed", "state": { "out_for_delivery": "mdi:truck-fast", "at_pickup_point": "mdi:store-clock", "returning": "mdi:keyboard-return", "problem": "mdi:package-variant-remove" } }
     },
     "sensor": {
       "incoming": { "default": "mdi:package-variant-closed" },
@@ -26,8 +26,7 @@
       "awaiting_pickup": { "default": "mdi:store-clock" },
       "next_delivery": { "default": "mdi:clock-fast" },
       "last_update": { "default": "mdi:clock-check-outline" },
-      "source_state": { "default": "mdi:account-sync" },
-      "parcel": { "default": "mdi:package-variant-closed" }
+      "source_state": { "default": "mdi:account-sync" }
     }
   },
   "services": {

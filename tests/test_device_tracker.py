@@ -1,26 +1,34 @@
-"""Courier tracker."""
+"""Parcel trackers: one per open parcel, placed by the courier or the latest scan."""
 
 from __future__ import annotations
 
 import json
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.open_parcels.const import DOMAIN
 
 from . import payloads
 from .conftest import FakeStream
 
+LIVE = "device_tracker.dhl_germany_abc123_parcel_test0000000001"
+PICKUP = "device_tracker.gls_99999_parcel_test0000000002"
 
-async def test_courier_tracker(
+
+async def test_courier_position_then_none(
     hass: HomeAssistant, loaded: MockConfigEntry, stream: FakeStream
 ) -> None:
-    """Current position from the resync, then from live messages; never recorded."""
-    entity_id = "device_tracker.dhl_germany_abc123_courier_test0000000001"
-    state = hass.states.get(entity_id)
+    """The status is the state; the courier places it; positions are never recorded."""
+    state = hass.states.get(LIVE)
     assert state is not None
+    assert state.state == "out_for_delivery"
     assert state.attributes["latitude"] == 50.0
     assert state.attributes["stops_away"] == 3
     assert state.attributes["gps_accuracy"] == 15
+    assert state.attributes["position_source"] == "courier"
+    assert state.attributes["barcode"] == "TEST0000000001"
 
     stream.push(
         "parcel.live_position",
@@ -40,20 +48,77 @@ async def test_courier_tracker(
         json.dumps({"parcel_id": payloads.PARCEL_B, "latitude": 1, "longitude": 2}),
     )
     await hass.async_block_till_done()
-    state = hass.states.get(entity_id)
+    state = hass.states.get(LIVE)
     assert state.attributes["latitude"] == 50.5
+    assert state.attributes["gps_accuracy"] == 0
     assert state.attributes["position_at"] == "2030-01-02T09:31:00.000Z"
     assert state.attributes["stops_away"] == 2
 
-    entity = hass.data["device_tracker"].get_entity(entity_id)
-    assert {"latitude", "longitude", "gps_accuracy"} <= set(
+    entity = hass.data["device_tracker"].get_entity(LIVE)
+    assert {"latitude", "longitude", "gps_accuracy", "history"} <= set(
         entity._Entity__combined_unrecorded_attributes
     )
 
-    # A position message without coordinates clears the position.
+    # Without the courier and without a placed scan, the tracker stays, off the map.
     stream.push(
         "parcel.live_position",
         json.dumps({"parcel_id": payloads.PARCEL_A, "latitude": None}),
     )
     await hass.async_block_till_done()
-    assert hass.states.get(entity_id).state == "unavailable"
+    state = hass.states.get(LIVE)
+    assert state.state == "out_for_delivery"
+    assert "latitude" not in state.attributes
+    assert state.attributes["position_source"] is None
+
+
+async def test_scan_position_and_finished_parcels(
+    hass: HomeAssistant, entry: MockConfigEntry, client
+) -> None:
+    """A placed scan positions a parcel; finished and unknown parcels get no tracker."""
+    parcels = payloads.parcels()
+    parcels[1]["location"] = {
+        "latitude": 51.0,
+        "longitude": 7.0,
+        "source": "event",
+        "precision": "exact",
+        "name": "Example hub",
+        "address": None,
+        "at": "2030-01-02T08:00:00.000Z",
+    }
+    parcels[3]["status"] = "unknown"
+    client.async_get_parcels.side_effect = lambda **_: parcels
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(PICKUP)
+    assert state.state == "at_pickup_point"
+    assert state.attributes["latitude"] == 51.0
+    assert state.attributes["position_source"] == "scan"
+    assert state.attributes["position_at"] == "2030-01-02T08:00:00.000Z"
+    assert hass.states.get("device_tracker.open_parcels_parcel_test0000000004") is None
+
+
+async def test_legacy_parcel_entities_are_removed(
+    hass: HomeAssistant, entry: MockConfigEntry, client
+) -> None:
+    """Status sensors and courier trackers from earlier versions are dropped."""
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    old_sensor = registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_parcel_{payloads.PARCEL_A}",
+        config_entry=entry,
+    )
+    old_courier = registry.async_get_or_create(
+        "device_tracker",
+        DOMAIN,
+        f"{entry.entry_id}_courier_{payloads.PARCEL_A}",
+        config_entry=entry,
+    )
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert registry.async_get(old_sensor.entity_id) is None
+    assert registry.async_get(old_courier.entity_id) is None
+    assert hass.states.get(LIVE) is not None

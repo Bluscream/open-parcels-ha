@@ -38,12 +38,11 @@ Otherwise, rename the new entities afterwards under Settings → Entities.
 | `sensor.<carrier device>_outgoing_parcels`, `_outgoing_delivered_parcels` | same names on the source device | now on every source |
 | `sensor.<carrier device>_next_delivery` | `sensor.<source device>_next_delivery` | same `barcode`, `sender`, `receiver`; adds `by_carrier` and `parcel` |
 | `sensor.<carrier device>_last_successful_update` | `sensor.<source device>_last_successful_update` | now the source's last successful run on the server, not Home Assistant's last poll; the hub's has the last resync |
-| `sensor.<carrier device>_parcel_<barcode>` | `sensor.<source device>_parcel_<barcode>` | same name, state and suite attributes; the unique ID is the server's parcel id, so these are new registry entries |
+| `sensor.<carrier device>_parcel_<barcode>` | `device_tracker.<source device>_parcel_<barcode>` | open parcels only, same state (the status) and suite attributes, plus a position for the map; delivered parcels have no entity and are listed in `sensor.*_delivered_parcels` (`parcel_ids`, `parcels`) |
 | `button.<carrier device>_refresh` | `button.<source device>_refresh` | asks the server to run the source; `button.open_parcels_refresh` resyncs everything |
 | `calendar.<carrier device>_deliveries` | `calendar.open_parcels_deliveries` | one calendar for all sources |
 | (none) | `sensor.<source device>_source_state`, `binary_sensor.<source device>_problem` | new: the source's state, including "needs sign-in" |
 | (none) | `binary_sensor.open_parcels_event_stream` | new: connection to the server's event stream |
-| (none) | `device_tracker.<source device>_courier_<barcode>` | new: the courier's current position during a live session |
 
 ## Parcel attributes
 

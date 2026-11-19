@@ -30,6 +30,21 @@ class ParcelStatus(StrEnum):
     UNKNOWN = "unknown"
 
 
+# Statuses of a parcel still on its way (or waiting to be fetched or sent back): only
+# these get their own tracker entity. Finished and unknown parcels show up in the list
+# sensors instead, so a source's device page does not fill up with old deliveries.
+OPEN_STATUSES = frozenset(
+    {
+        ParcelStatus.REGISTERED,
+        ParcelStatus.IN_TRANSIT,
+        ParcelStatus.OUT_FOR_DELIVERY,
+        ParcelStatus.AT_PICKUP_POINT,
+        ParcelStatus.RETURNING,
+        ParcelStatus.PROBLEM,
+    }
+)
+
+
 class SourceState(StrEnum):
     """State of an Open Parcels source."""
 

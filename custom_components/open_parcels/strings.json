@@ -184,8 +184,8 @@
       }
     },
     "device_tracker": {
-      "courier": {
-        "name": "Courier {barcode}"
+      "parcel": {
+        "name": "Parcel {barcode}"
       }
     },
     "sensor": {
@@ -244,9 +244,6 @@
           "disabled": "Disabled",
           "idle": "Idle"
         }
-      },
-      "parcel": {
-        "name": "Parcel {barcode}"
       }
     }
   },
