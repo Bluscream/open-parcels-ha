@@ -103,6 +103,24 @@ async def test_removed_parcel_drops_entity(
     assert len(fired) == 1
 
 
+async def test_removal_without_sources_goes_to_the_source_device(
+    hass: HomeAssistant, loaded: MockConfigEntry, stream: FakeStream
+) -> None:
+    """A removal whose payload names no source still fires on the owning source's device."""
+    fired = events(hass, f"{DOMAIN}_parcel_removed")
+    stream.push("parcel.removed", json.dumps({"parcel": _parcel(1, sources=[])}), "44")
+    await hass.async_block_till_done()
+    gls = find_device(
+        hass,
+        loaded.entry_id,
+        (DOMAIN, f"{loaded.entry_id}_source_{payloads.SOURCE_GLS}"),
+    )
+    hub = find_device(hass, loaded.entry_id, (DOMAIN, loaded.entry_id))
+    assert len(fired) == 1
+    assert fired[0].data["device_id"] == gls.id
+    assert fired[0].data["device_id"] != hub.id
+
+
 async def test_delivered_and_delivery_time_and_outgoing_events(
     hass: HomeAssistant, loaded: MockConfigEntry, stream: FakeStream
 ) -> None:

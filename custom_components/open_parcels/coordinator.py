@@ -520,6 +520,10 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
                 self.positions.pop(parcel_id, None)
 
         source_id = owner_source_id(parcel)
+        if source_id is None and event_type in _GONE_EVENTS and previous is not None:
+            # A removal's payload may no longer name the parcel's sources: the trigger still
+            # belongs on the device of the source that had it, not on the hub.
+            source_id = owner_source_id(previous)
         if source_id and source_id not in self.data.sources:
             self.hass.async_create_task(self.async_request_refresh())
 
