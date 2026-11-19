@@ -91,6 +91,45 @@ async def test_reconnect_without_id_resyncs(
     assert client.async_get_parcels.await_count == before + 1
 
 
+async def test_unexpected_error_reconnects_instead_of_ending_the_stream(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    stream: FakeStream,
+    delays: list[float],
+) -> None:
+    """An error of an unexpected kind (aiohttp's "Chunk too big") is logged and reconnected."""
+    stream.push("vocab.unknown", json.dumps({}), "8")
+    stream.queue.put_nowait(ValueError("Chunk too big"))
+    await _settle(hass)
+    assert stream.calls == [None, "8"]
+    assert hass.states.get("binary_sensor.open_parcels_event_stream").state == "on"
+
+
+async def test_a_failing_message_is_skipped_and_the_stream_goes_on(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    stream: FakeStream,
+    delays: list[float],
+) -> None:
+    """A handler error on one message never ends the stream; later messages still apply."""
+    coordinator = loaded.runtime_data.coordinator
+    handled: list[str] = []
+    original = coordinator.async_handle_message
+
+    def handle(message):
+        if message.event == "boom":
+            raise RuntimeError("handler bug")
+        handled.append(message.event)
+        original(message)
+
+    with patch.object(coordinator, "async_handle_message", handle):
+        stream.push("boom", "{}", "9")
+        stream.push("vocab.unknown", "{}", "10")
+        await _settle(hass)
+    assert handled == ["vocab.unknown"]
+    assert stream.calls == [None]
+
+
 async def test_refused_token_starts_reauth(
     hass: HomeAssistant,
     loaded: MockConfigEntry,

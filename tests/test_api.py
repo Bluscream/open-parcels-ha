@@ -11,11 +11,13 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pytest
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
+from custom_components.open_parcels import api as api_module
 from custom_components.open_parcels.api import (
     OpenParcelsApiError,
     OpenParcelsAuthError,
     OpenParcelsClient,
     OpenParcelsConnectionError,
+    OpenParcelsError,
     OpenParcelsNotFoundError,
     OpenParcelsScopeError,
     SseParser,
@@ -176,13 +178,12 @@ async def test_validate_without_write_scope(
 
 
 class _FakeContent:
+    """Chunks as the network delivers them; they need not end at a line break."""
+
     def __init__(self, lines: list[bytes]) -> None:
         self._lines = lines
 
-    def __aiter__(self):
-        return self._gen()
-
-    async def _gen(self):
+    async def iter_any(self):
         for line in self._lines:
             yield line
 
@@ -238,6 +239,42 @@ async def test_stream_events() -> None:
     assert opened == [True]
     assert session.headers["Last-Event-ID"] == "2"
     assert [(m.id, m.event, m.data) for m in messages] == [("3", "x", "{}")]
+
+
+async def test_stream_survives_long_lines_and_split_chunks() -> None:
+    """A line over 128 KiB is read whole, and chunks may cut lines anywhere."""
+    long_data = "x" * 300_000
+    body = f"id: 4\nevent: big\ndata: {long_data}\n\nid: 5\nevent: y\ndata: {{}}\n\n".encode()
+    chunks = [body[i : i + 7_000] for i in range(0, len(body), 7_000)]
+    client = OpenParcelsClient(_FakeSession(_FakeResponse(200, chunks)), BASE, TOKEN)  # type: ignore[arg-type]
+    messages = [m async for m in client.async_stream_events(None, 90)]
+    assert [(m.id, m.event, len(m.data)) for m in messages] == [
+        ("4", "big", 300_000),
+        ("5", "y", 2),
+    ]
+
+
+async def test_stream_drops_a_line_past_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A line past the cap is dropped; the stream goes on with the next one."""
+    monkeypatch.setattr(api_module, "MAX_SSE_LINE_BYTES", 100)
+    body = (
+        b"id: 1\nevent: big\ndata: " + b"x" * 500 + b"\n\nid: 2\nevent: y\ndata: {}\n\n"
+    )
+    chunks = [body[i : i + 50] for i in range(0, len(body), 50)]
+    client = OpenParcelsClient(_FakeSession(_FakeResponse(200, chunks)), BASE, TOKEN)  # type: ignore[arg-type]
+    messages = [m async for m in client.async_stream_events(None, 90)]
+    assert [m.id for m in messages if m.event == "y"] == ["2"]
+
+
+async def test_non_json_answer_is_a_client_error(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A 200 that is not JSON raises OpenParcelsError, not a bare JSONDecodeError."""
+    aioclient_mock.get(f"{API}/sources", text="<html>proxy</html>")
+    with pytest.raises(OpenParcelsError):
+        await _client(hass).async_get_sources()
 
 
 async def test_stream_errors() -> None:

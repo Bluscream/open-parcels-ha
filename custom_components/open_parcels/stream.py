@@ -9,7 +9,7 @@ import random
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .api import OpenParcelsAuthError, OpenParcelsError
+from .api import OpenParcelsAuthError, OpenParcelsError, SseMessage
 from .const import (
     STREAM_BACKOFF_INITIAL_SECONDS,
     STREAM_BACKOFF_MAX_SECONDS,
@@ -54,6 +54,14 @@ class _Attempt:
             self._hass.async_create_task(self._coordinator.async_refresh())
 
 
+def _handle(coordinator: OpenParcelsCoordinator, message: SseMessage) -> None:
+    """Apply one message; a message that fails is logged and skipped, the stream goes on."""
+    try:
+        coordinator.async_handle_message(message)
+    except Exception:
+        _LOGGER.exception("Handling the event stream message %s failed", message.event)
+
+
 async def async_run_stream(
     hass: HomeAssistant, entry: ConfigEntry, coordinator: OpenParcelsCoordinator
 ) -> None:
@@ -76,7 +84,7 @@ async def async_run_stream(
             async for message in coordinator.client.async_stream_events(
                 last_id, STREAM_READ_TIMEOUT_SECONDS, attempt.on_open
             ):
-                coordinator.async_handle_message(message)
+                _handle(coordinator, message)
             _LOGGER.debug("The event stream closed; reconnecting")
         except OpenParcelsAuthError:
             coordinator.async_set_stream_connected(False)
@@ -85,6 +93,13 @@ async def async_run_stream(
             return
         except OpenParcelsError as err:
             _LOGGER.debug("Event stream error: %s", err)
+        except asyncio.CancelledError:
+            coordinator.async_set_stream_connected(False)
+            raise
+        except Exception:
+            # Anything else (a parser bug, an aiohttp error of a kind not wrapped) must not end
+            # the task while the sensor still says connected: log it and reconnect.
+            _LOGGER.exception("The event stream failed unexpectedly; reconnecting")
         coordinator.async_set_stream_connected(False)
         # Only a connection that stayed up a while resets the backoff, so a
         # server that accepts and drops at once cannot cause a tight loop.

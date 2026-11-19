@@ -6,10 +6,13 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import logging
 from typing import Any
 import uuid
 
 import aiohttp
+
+_LOGGER = logging.getLogger(__name__)
 
 API_PREFIX = "/api/v1"
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30)
@@ -135,7 +138,13 @@ class OpenParcelsClient:
                     await _raise_for_status(response)
                 if response.status in (202, 204):
                     return None
-                return await response.json(content_type=None)
+                try:
+                    return await response.json(content_type=None)
+                except ValueError as err:
+                    # A proxy's HTML page or a cut-off body: the server's answer, not JSON.
+                    raise OpenParcelsError(
+                        f"The server's answer to {path} is not JSON"
+                    ) from err
         except (aiohttp.ClientError, TimeoutError) as err:
             raise OpenParcelsConnectionError(str(err) or type(err).__name__) from err
 
@@ -230,13 +239,42 @@ class OpenParcelsClient:
                     await _raise_for_status(response)
                 if on_open is not None:
                     on_open()
-                async for raw_line in response.content:
-                    line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                # Lines are split here, not by aiohttp's readline: that one raises "Chunk too
+                # big" on a line over 128 KiB (a parcel with a long history), which killed the
+                # stream. A line over MAX_SSE_LINE_BYTES is dropped and the stream goes on.
+                async for line in _sse_lines(response.content):
                     message = parser.feed_line(line)
                     if message is not None:
                         yield message
         except (aiohttp.ClientError, TimeoutError) as err:
             raise OpenParcelsConnectionError(str(err) or type(err).__name__) from err
+
+
+# The longest event line kept; a longer one is dropped instead of ending the stream.
+MAX_SSE_LINE_BYTES = 8 * 1024 * 1024
+
+
+async def _sse_lines(content: aiohttp.StreamReader) -> AsyncIterator[str]:
+    """The stream's lines, without their line ending, split on LF (a CR before it is dropped)."""
+    buffer = bytearray()
+    skipping = False
+    async for chunk in content.iter_any():
+        buffer.extend(chunk)
+        while (end := buffer.find(b"\n")) != -1:
+            raw = bytes(buffer[:end])
+            del buffer[: end + 1]
+            if skipping:
+                skipping = False
+                continue
+            yield raw.decode("utf-8", errors="replace").rstrip("\r")
+        if len(buffer) > MAX_SSE_LINE_BYTES:
+            _LOGGER.warning(
+                "An event stream line exceeded %s bytes; dropped", MAX_SSE_LINE_BYTES
+            )
+            buffer.clear()
+            skipping = True
+    if buffer and not skipping:
+        yield bytes(buffer).decode("utf-8", errors="replace").rstrip("\r")
 
 
 async def _raise_for_status(response: aiohttp.ClientResponse) -> None:
