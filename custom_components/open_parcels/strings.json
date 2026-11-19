@@ -241,7 +241,8 @@
           "ok": "OK",
           "needs_sign_in": "Needs sign-in",
           "error": "Error",
-          "disabled": "Disabled"
+          "disabled": "Disabled",
+          "idle": "Idle"
         }
       },
       "parcel": {

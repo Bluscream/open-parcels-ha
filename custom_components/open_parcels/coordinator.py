@@ -36,6 +36,7 @@ from .const import (
     SERVER_EVENT_SUFFIXES,
     SIGNAL_LIVE_POSITION,
     SOURCE_REMOVED_EVENT,
+    SOURCE_SNAPSHOT_EVENTS,
 )
 from .device import find_device, hub_identifier, source_device_info, source_identifier
 from .parcels import (
@@ -392,6 +393,9 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
             self._apply_source_removed(payload)
             self._calendar_debouncer.async_schedule_call()
             return
+        if message.event in SOURCE_SNAPSHOT_EVENTS and self.data is not None:
+            self._apply_source_snapshot(payload)
+            return
         if message.event not in SERVER_EVENT_SUFFIXES or self.data is None:
             return
         if message.event == "source.state_changed":
@@ -450,6 +454,31 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
                 "hub_device_id": self.device_id_for_source(None),
             },
         )
+        self.async_set_updated_data(self.data)
+
+    def _apply_source_snapshot(self, payload: dict[str, Any]) -> None:
+        """Take a source as an event reports it: added, renamed, or just run.
+
+        The registry sync that follows creates a new source's device at once and
+        renames an existing one; a name the user gave the device in Home Assistant
+        is kept, since that is stored apart. A source not seen before is also
+        reloaded over REST for the fields the event does not carry (run times).
+        """
+        raw_source = payload.get("source")
+        source: dict[str, Any] = raw_source if isinstance(raw_source, dict) else {}
+        source_id = str(source.get("id") or "")
+        if not source_id:
+            return
+        known = self.data.sources.get(source_id)
+        if known is None:
+            known = self.data.sources[source_id] = {"id": source_id}
+            self.hass.async_create_task(self.async_request_refresh())
+        for key in ("plugin", "label", "kind"):
+            if key in source:
+                known[key] = source[key]
+        if "state" in payload:
+            known["state"] = payload["state"]
+            known["state_detail"] = payload.get("detail")
         self.async_set_updated_data(self.data)
 
     def _apply_source_removed(self, payload: dict[str, Any]) -> None:

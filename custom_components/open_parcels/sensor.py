@@ -16,7 +16,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import OpenParcelsConfigEntry
-from .const import SourceState
+from .const import NOT_RUN_YET_DETAIL, SourceState
 from .coordinator import OpenParcelsCoordinator
 from .entity import OpenParcelsEntity, async_add_dynamic, device_for_source
 from .parcels import count_by_carrier, next_delivery, parse_iso
@@ -231,8 +231,15 @@ class SourceStateSensor(_SourceEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        """The state, or None for a value this version does not know."""
+        """The state, or None for a value this version does not know.
+
+        An OK source with a detail other than "not run yet" ran but had nothing
+        it could do (DPD with public tracking off): that is "idle", not "ok".
+        """
         state = self._source.get("state")
+        detail = self._source.get("state_detail")
+        if state == SourceState.OK and detail and detail != NOT_RUN_YET_DETAIL:
+            return SourceState.IDLE.value
         return state if state in self._attr_options else None
 
     @property

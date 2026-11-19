@@ -37,6 +37,8 @@ class SourceState(StrEnum):
     NEEDS_SIGN_IN = "needs_sign_in"
     ERROR = "error"
     DISABLED = "disabled"
+    # Not a server state: an OK source whose run deliberately did nothing.
+    IDLE = "idle"
 
 
 CONF_API_TOKEN = "api_token"
@@ -88,6 +90,14 @@ LIVE_POSITION_EVENT = "parcel.live_position"
 # Source removed (deleted, or merged into another): fired on the bus, but not a device
 # trigger, because the device it would belong to is removed with it.
 SOURCE_REMOVED_EVENT = "source.removed"
+# Events carrying a source as it now is (label, state, detail): a new one gets its
+# device, a renamed one its new device name. Not device triggers.
+SOURCE_SNAPSHOT_EVENTS = frozenset(
+    {"source.added", "source.updated", "source.run_finished"}
+)
+# The server's detail for a source nothing has judged yet. Any other detail on an
+# OK source means it ran but had nothing it could do: the sensor shows "idle".
+NOT_RUN_YET_DETAIL = "Not run yet."
 # Stream control messages: both carry the server's current sequence as their id.
 # `ready` opens a stream sent without Last-Event-ID; `resync` says the id sent
 # could not be replayed (too old, or the server's database was reset).

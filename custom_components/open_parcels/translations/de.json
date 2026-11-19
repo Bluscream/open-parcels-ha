@@ -241,7 +241,8 @@
           "ok": "OK",
           "needs_sign_in": "Anmeldung nötig",
           "error": "Fehler",
-          "disabled": "Deaktiviert"
+          "disabled": "Deaktiviert",
+          "idle": "Untätig"
         }
       },
       "parcel": {
