@@ -320,12 +320,13 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
             longitude, int | float
         ):
             return None
+        # The server's answer to "where is it now": the courier, else the newest placed scan.
         return ParcelPosition(
             latitude=float(latitude),
             longitude=float(longitude),
             accuracy=0,
             at=location.get("at"),
-            source="scan",
+            source="courier" if location.get("source") == "courier" else "scan",
             stops_away=None,
         )
 
