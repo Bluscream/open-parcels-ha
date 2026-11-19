@@ -1,0 +1,27 @@
+name: Validate
+
+on:
+  workflow_dispatch:
+  # Disabled: workflows do not run under this account; uncomment if you fork this repository.
+  # push:
+  #   branches: [main]
+  # pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy custom_components/open_parcels --ignore-missing-imports
+      - run: >-
+          python -m pytest tests/
+          --cov=custom_components.open_parcels --cov-fail-under=95 -v

@@ -1,0 +1,94 @@
+"""The live event stream: connect, replay with Last-Event-ID, reconnect with backoff."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import random
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+
+from .api import OpenParcelsAuthError, OpenParcelsError
+from .const import (
+    STREAM_BACKOFF_INITIAL_SECONDS,
+    STREAM_BACKOFF_MAX_SECONDS,
+    STREAM_READ_TIMEOUT_SECONDS,
+)
+from .coordinator import OpenParcelsCoordinator
+
+_LOGGER = logging.getLogger(__name__)
+
+# A connection that lasted this long counts as healthy.
+STABLE_SECONDS = 60.0
+
+
+def next_backoff(current: float) -> float:
+    """Double the delay up to the cap."""
+    return min(current * 2, STREAM_BACKOFF_MAX_SECONDS)
+
+
+def jittered(delay: float) -> float:
+    """Spread reconnects by up to a fifth of the delay."""
+    return delay * (1 + random.random() / 5)
+
+
+class _Attempt:
+    """One connection attempt: notes when the server accepted it."""
+
+    def __init__(
+        self, hass: HomeAssistant, coordinator: OpenParcelsCoordinator, *, resync: bool
+    ) -> None:
+        self._hass = hass
+        self._coordinator = coordinator
+        self._resync = resync
+        self.opened_at: float | None = None
+
+    def on_open(self) -> None:
+        """Mark the stream connected; resync when no Last-Event-ID could be sent."""
+        self.opened_at = self._hass.loop.time()
+        self._coordinator.async_set_stream_connected(True)
+        if self._resync:
+            self._hass.async_create_task(self._coordinator.async_request_refresh())
+
+
+async def async_run_stream(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: OpenParcelsCoordinator
+) -> None:
+    """Keep the event stream open until the entry unloads.
+
+    The first connection starts without Last-Event-ID: the REST resync has
+    just loaded the current state, and replaying the past would re-fire events
+    that happened while Home Assistant was not running. Reconnects send the
+    last id seen so nothing in between is lost. When no id has been seen yet,
+    a resync after reconnecting fills the gap instead.
+    """
+    delay = STREAM_BACKOFF_INITIAL_SECONDS
+    first = True
+    while True:
+        last_id = coordinator.last_event_id
+        attempt = _Attempt(hass, coordinator, resync=not first and last_id is None)
+        try:
+            async for message in coordinator.client.async_stream_events(
+                last_id, STREAM_READ_TIMEOUT_SECONDS, attempt.on_open
+            ):
+                coordinator.async_handle_message(message)
+            _LOGGER.debug("The event stream closed; reconnecting")
+        except OpenParcelsAuthError:
+            coordinator.async_set_stream_connected(False)
+            _LOGGER.warning("The event stream refused the API token")
+            entry.async_start_reauth(hass)
+            return
+        except OpenParcelsError as err:
+            _LOGGER.debug("Event stream error: %s", err)
+        coordinator.async_set_stream_connected(False)
+        first = False
+        # Only a connection that stayed up a while resets the backoff, so a
+        # server that accepts and drops at once cannot cause a tight loop.
+        if (
+            attempt.opened_at is not None
+            and hass.loop.time() - attempt.opened_at > STABLE_SECONDS
+        ):
+            delay = STREAM_BACKOFF_INITIAL_SECONDS
+        await asyncio.sleep(jittered(delay))
+        delay = next_backoff(delay)

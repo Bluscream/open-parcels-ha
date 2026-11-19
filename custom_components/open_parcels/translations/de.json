@@ -1,0 +1,283 @@
+{
+  "title": "Open Parcels",
+  "config": {
+    "flow_title": "{url}",
+    "step": {
+      "user": {
+        "title": "Mit Open Parcels verbinden",
+        "description": "Gib die Adresse deines Open-Parcels-Servers und ein API-Token mit den Berechtigungen read und write ein. Das Token erstellst du in der Open-Parcels-Weboberfläche unter Einstellungen.",
+        "data": {
+          "url": "Server-URL",
+          "api_token": "API-Token"
+        },
+        "data_description": {
+          "url": "Zum Beispiel http://192.168.1.10:4000 oder die Tailscale-Adresse.",
+          "api_token": "Braucht die Berechtigungen read und write."
+        }
+      },
+      "discovery_confirm": {
+        "title": "Open Parcels gefunden",
+        "description": "Unter {url} wurde ein Open-Parcels-Server gefunden. Gib ein API-Token mit den Berechtigungen read und write ein, um ihn hinzuzufügen.",
+        "data": {
+          "api_token": "API-Token"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Neues API-Token",
+        "description": "Der Open-Parcels-Server unter {url} hat das API-Token abgelehnt. Gib ein neues Token mit den Berechtigungen read und write ein.",
+        "data": {
+          "api_token": "API-Token"
+        }
+      },
+      "reconfigure": {
+        "title": "Open-Parcels-Server ändern",
+        "data": {
+          "url": "Server-URL",
+          "api_token": "API-Token"
+        },
+        "data_description": {
+          "url": "Zum Beispiel http://192.168.1.10:4000 oder die Tailscale-Adresse.",
+          "api_token": "Braucht die Berechtigungen read und write."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Der Server ist nicht erreichbar. Prüfe die Adresse.",
+      "invalid_auth": "Der Server hat das API-Token abgelehnt.",
+      "missing_scope": "Das API-Token braucht die Berechtigungen read und write.",
+      "unknown": "Der Server hat unerwartet geantwortet."
+    },
+    "abort": {
+      "already_configured": "Dieser Open-Parcels-Server ist bereits eingerichtet.",
+      "reauth_successful": "Das API-Token wurde aktualisiert.",
+      "reconfigure_successful": "Die Verbindung wurde aktualisiert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Open-Parcels-Optionen",
+        "data": {
+          "resync_minutes": "Intervall für den vollständigen Abgleich",
+          "include_history": "Statusverlauf einbeziehen",
+          "delivered_filter_type": "Zugestellte Pakete: filtern nach",
+          "delivered_filter_amount": "Zugestellte Pakete: Anzahl"
+        },
+        "data_description": {
+          "resync_minutes": "Änderungen kommen live über den Ereignis-Stream. Dieser langsame Abgleich holt nur nach, was der Stream verpasst hat.",
+          "include_history": "Fügt jedem Paket ein Attribut mit allen Statusmeldungen hinzu. Standardmäßig aus.",
+          "delivered_filter_type": "Zugestellte Pakete der letzten X Tage anzeigen oder auf die X neuesten begrenzen.",
+          "delivered_filter_amount": "Anzahl der Tage oder Pakete."
+        }
+      }
+    }
+  },
+  "selector": {
+    "delivered_filter_type": {
+      "options": {
+        "days": "Tage",
+        "parcels": "Anzahl Pakete"
+      }
+    },
+    "direction": {
+      "options": {
+        "incoming": "Eingehend",
+        "outgoing": "Ausgehend"
+      }
+    }
+  },
+  "services": {
+    "track_parcel": {
+      "name": "Paket verfolgen",
+      "description": "Ein Paket anhand seiner Sendungsnummer verfolgen. Der Zusteller wird aus der Nummer erkannt, wenn du ihn nicht angibst.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Server",
+          "description": "Der Open-Parcels-Server. Nur nötig, wenn mehrere eingerichtet sind."
+        },
+        "tracking_code": {
+          "name": "Sendungsnummer",
+          "description": "Die Sendungsnummer des Pakets."
+        },
+        "carrier": {
+          "name": "Zusteller",
+          "description": "Die Open-Parcels-Kennung des Zustellers, zum Beispiel dhl. Leer lassen zum Erkennen."
+        },
+        "label": {
+          "name": "Bezeichnung",
+          "description": "Ein optionaler Name für das Paket."
+        },
+        "direction": {
+          "name": "Richtung",
+          "description": "Ob du das Paket empfängst oder versendest."
+        }
+      }
+    },
+    "archive_parcel": {
+      "name": "Paket archivieren",
+      "description": "Ein Paket archivieren, damit es nicht mehr angezeigt wird. Per Sendungsnummer oder Kennung angeben.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Server",
+          "description": "Der Open-Parcels-Server. Nur nötig, wenn mehrere eingerichtet sind."
+        },
+        "tracking_code": {
+          "name": "Sendungsnummer",
+          "description": "Die Sendungsnummer des Pakets."
+        },
+        "parcel_id": {
+          "name": "Paket-Kennung",
+          "description": "Die Open-Parcels-Kennung des Pakets (Attribut id)."
+        }
+      }
+    },
+    "refresh": {
+      "name": "Aktualisieren",
+      "description": "Alles neu vom Server lesen. Mit einem Paket werden zuerst die Quellen ausgeführt, die es verfolgen.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Server",
+          "description": "Der Open-Parcels-Server. Nur nötig, wenn mehrere eingerichtet sind."
+        },
+        "tracking_code": {
+          "name": "Sendungsnummer",
+          "description": "Optional: die Sendungsnummer eines Pakets, das zuerst aktualisiert wird."
+        },
+        "parcel_id": {
+          "name": "Paket-Kennung",
+          "description": "Optional: die Open-Parcels-Kennung eines Pakets, das zuerst aktualisiert wird."
+        }
+      }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "parcel_registered": "Eine Sendung wurde registriert",
+      "parcel_status_changed": "Der Status einer Sendung hat sich geändert",
+      "parcel_delivered": "Eine Sendung wurde zugestellt",
+      "parcel_delivery_time_changed": "Die voraussichtliche Zustellzeit einer Sendung hat sich geändert",
+      "outgoing_parcel_registered": "Eine ausgehende Sendung wurde registriert",
+      "outgoing_parcel_delivered": "Eine ausgehende Sendung wurde zugestellt",
+      "parcel_live_updated": "Die Live-Verfolgung einer Sendung hat sich geändert",
+      "parcel_removed": "Eine Sendung wurde entfernt",
+      "source_state_changed": "Der Zustand einer Quelle hat sich geändert"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "event_stream": {
+        "name": "Ereignis-Stream"
+      },
+      "source_problem": {
+        "name": "Problem"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Aktualisieren"
+      }
+    },
+    "calendar": {
+      "deliveries": {
+        "name": "Zustellungen"
+      }
+    },
+    "device_tracker": {
+      "courier": {
+        "name": "Zusteller {barcode}"
+      }
+    },
+    "sensor": {
+      "incoming": {
+        "name": "Eingehende Pakete",
+        "unit_of_measurement": "Pakete"
+      },
+      "outgoing": {
+        "name": "Ausgehende Pakete",
+        "unit_of_measurement": "Pakete"
+      },
+      "delivered": {
+        "name": "Zugestellte Pakete",
+        "unit_of_measurement": "Pakete"
+      },
+      "outgoing_delivered": {
+        "name": "Ausgehende zugestellte Pakete",
+        "unit_of_measurement": "Pakete"
+      },
+      "incoming_parcels": {
+        "name": "Eingehende Pakete",
+        "unit_of_measurement": "Pakete"
+      },
+      "delivered_parcels": {
+        "name": "Zugestellte Pakete",
+        "unit_of_measurement": "Pakete"
+      },
+      "outgoing_parcels": {
+        "name": "Ausgehende Pakete",
+        "unit_of_measurement": "Pakete"
+      },
+      "outgoing_delivered_parcels": {
+        "name": "Ausgehende zugestellte Pakete",
+        "unit_of_measurement": "Pakete"
+      },
+      "en_route_to_pickup_point": {
+        "name": "Unterwegs zum Abholort",
+        "unit_of_measurement": "Pakete"
+      },
+      "awaiting_pickup": {
+        "name": "Abholbereit",
+        "unit_of_measurement": "Pakete"
+      },
+      "next_delivery": {
+        "name": "Nächste Zustellung"
+      },
+      "last_update": {
+        "name": "Letzte erfolgreiche Aktualisierung"
+      },
+      "source_state": {
+        "name": "Zustand der Quelle",
+        "state": {
+          "ok": "OK",
+          "needs_sign_in": "Anmeldung nötig",
+          "error": "Fehler",
+          "disabled": "Deaktiviert"
+        }
+      },
+      "parcel": {
+        "name": "Paket {barcode}"
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "Der Open-Parcels-Server hat das API-Token abgelehnt."
+    },
+    "update_failed": {
+      "message": "Lesen vom Open-Parcels-Server fehlgeschlagen: {error}"
+    },
+    "sync_failed": {
+      "message": "Die Quelle konnte nicht ausgeführt werden: {error}"
+    },
+    "calendar_failed": {
+      "message": "Der Kalender konnte nicht gelesen werden: {error}"
+    },
+    "no_loaded_entry": {
+      "message": "Kein Open-Parcels-Server ist geladen."
+    },
+    "entry_required": {
+      "message": "Mehrere Open-Parcels-Server sind eingerichtet. Wähle einen aus."
+    },
+    "parcel_not_found": {
+      "message": "Das Paket {parcel} ist nicht bekannt."
+    },
+    "parcel_required": {
+      "message": "Gib das Paket per Sendungsnummer oder Kennung an."
+    },
+    "request_refused": {
+      "message": "Der Server hat die Anfrage abgelehnt: {error}"
+    },
+    "request_failed": {
+      "message": "Die Anfrage an den Server ist fehlgeschlagen: {error}"
+    }
+  }
+}

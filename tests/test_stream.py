@@ -1,0 +1,138 @@
+"""The event stream loop: connect, reconnect with Last-Event-ID, backoff, reauth."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Generator
+import json
+from unittest.mock import MagicMock, patch
+
+from homeassistant.core import HomeAssistant
+import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.open_parcels import stream as stream_module
+from custom_components.open_parcels.api import (
+    OpenParcelsAuthError,
+    OpenParcelsConnectionError,
+)
+from custom_components.open_parcels.const import (
+    STREAM_BACKOFF_INITIAL_SECONDS,
+    STREAM_BACKOFF_MAX_SECONDS,
+)
+
+from .conftest import FakeStream
+
+
+@pytest.fixture
+def delays() -> Generator[list[float]]:
+    """Record the reconnect delays and skip the actual waiting."""
+    recorded: list[float] = []
+
+    def _record(delay: float) -> float:
+        recorded.append(delay)
+        return 0
+
+    with patch.object(stream_module, "jittered", _record):
+        yield recorded
+
+
+async def _settle(hass: HomeAssistant) -> None:
+    """Let the background stream task run through several hops."""
+    for _ in range(10):
+        await hass.async_block_till_done()
+        await asyncio.sleep(0)
+
+
+def test_backoff_doubles_and_caps() -> None:
+    """Backoff doubles to the cap; jitter adds at most a fifth."""
+    assert stream_module.next_backoff(1) == 2
+    assert stream_module.next_backoff(STREAM_BACKOFF_MAX_SECONDS) == (
+        STREAM_BACKOFF_MAX_SECONDS
+    )
+    assert 10 <= stream_module.jittered(10) <= 12
+
+
+async def test_first_connect_has_no_last_event_id(
+    hass: HomeAssistant, loaded: MockConfigEntry, stream: FakeStream
+) -> None:
+    """The first connection never replays the past."""
+    await _settle(hass)
+    assert stream.calls == [None]
+    assert hass.states.get("binary_sensor.open_parcels_event_stream").state == "on"
+
+
+async def test_reconnect_sends_last_event_id(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    stream: FakeStream,
+    delays: list[float],
+) -> None:
+    """After a drop, the stream reconnects with the last id it saw."""
+    stream.push("vocab.unknown", json.dumps({}), "7")
+    stream.queue.put_nowait(OpenParcelsConnectionError("reset"))
+    await _settle(hass)
+    assert stream.calls == [None, "7"]
+    assert delays == [STREAM_BACKOFF_INITIAL_SECONDS]
+
+
+async def test_reconnect_without_id_resyncs(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    stream: FakeStream,
+    client: MagicMock,
+    delays: list[float],
+) -> None:
+    """With no id seen yet, a reconnect is followed by a full resync."""
+    before = client.async_get_parcels.await_count
+    stream.queue.put_nowait(None)  # the server closes the stream
+    await _settle(hass)
+    assert stream.calls == [None, None]
+    assert client.async_get_parcels.await_count == before + 1
+
+
+async def test_refused_token_starts_reauth(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    stream: FakeStream,
+    delays: list[float],
+) -> None:
+    """A 401 on the stream stops it and asks for a new token."""
+    stream.open_error = OpenParcelsAuthError(401, "unauthorized", None)
+    stream.queue.put_nowait(None)
+    await _settle(hass)
+    assert hass.states.get("binary_sensor.open_parcels_event_stream").state == "off"
+    flows = hass.config_entries.flow.async_progress()
+    assert any(flow["context"]["source"] == "reauth" for flow in flows)
+
+
+async def test_unstable_connection_keeps_backing_off(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    stream: FakeStream,
+    delays: list[float],
+) -> None:
+    """Connections that drop at once double the delay each time."""
+    stream.queue.put_nowait(OpenParcelsConnectionError("first drop"))
+    await _settle(hass)
+    stream.queue.put_nowait(OpenParcelsConnectionError("second drop"))
+    await _settle(hass)
+    assert delays == [
+        STREAM_BACKOFF_INITIAL_SECONDS,
+        STREAM_BACKOFF_INITIAL_SECONDS * 2,
+    ]
+
+
+async def test_stable_connection_resets_backoff(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    stream: FakeStream,
+    delays: list[float],
+) -> None:
+    """A connection that stayed up long enough starts the backoff over."""
+    stream.queue.put_nowait(OpenParcelsConnectionError("first drop"))
+    await _settle(hass)
+    with patch.object(stream_module, "STABLE_SECONDS", -1.0):
+        stream.queue.put_nowait(OpenParcelsConnectionError("second drop"))
+        await _settle(hass)
+    assert delays == [STREAM_BACKOFF_INITIAL_SECONDS, STREAM_BACKOFF_INITIAL_SECONDS]

@@ -1,0 +1,283 @@
+{
+  "title": "Open Parcels",
+  "config": {
+    "flow_title": "{url}",
+    "step": {
+      "user": {
+        "title": "Connect to Open Parcels",
+        "description": "Enter the address of your Open Parcels server and an API token with the read and write scopes. Create the token in the Open Parcels web interface under Settings.",
+        "data": {
+          "url": "Server URL",
+          "api_token": "API token"
+        },
+        "data_description": {
+          "url": "For example http://192.168.1.10:4000 or the Tailscale address.",
+          "api_token": "Needs the scopes read and write."
+        }
+      },
+      "discovery_confirm": {
+        "title": "Open Parcels found",
+        "description": "An Open Parcels server was found at {url}. Enter an API token with the read and write scopes to add it.",
+        "data": {
+          "api_token": "API token"
+        }
+      },
+      "reauth_confirm": {
+        "title": "New API token",
+        "description": "The Open Parcels server at {url} refused the API token. Enter a new token with the read and write scopes.",
+        "data": {
+          "api_token": "API token"
+        }
+      },
+      "reconfigure": {
+        "title": "Change the Open Parcels server",
+        "data": {
+          "url": "Server URL",
+          "api_token": "API token"
+        },
+        "data_description": {
+          "url": "For example http://192.168.1.10:4000 or the Tailscale address.",
+          "api_token": "Needs the scopes read and write."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "The server could not be reached. Check the address.",
+      "invalid_auth": "The server refused the API token.",
+      "missing_scope": "The API token needs both the read and the write scope.",
+      "unknown": "The server gave an unexpected answer."
+    },
+    "abort": {
+      "already_configured": "This Open Parcels server is already set up.",
+      "reauth_successful": "The API token was updated.",
+      "reconfigure_successful": "The connection was updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Open Parcels options",
+        "data": {
+          "resync_minutes": "Full resync interval",
+          "include_history": "Include status history",
+          "delivered_filter_type": "Delivered parcels: filter by",
+          "delivered_filter_amount": "Delivered parcels: amount"
+        },
+        "data_description": {
+          "resync_minutes": "Changes arrive live through the event stream. This slow resync only catches anything the stream missed.",
+          "include_history": "Add a per-parcel history attribute listing each status update. Off by default.",
+          "delivered_filter_type": "Show delivered parcels from the last X days, or limit to the X most recent.",
+          "delivered_filter_amount": "Number of days or parcels to show."
+        }
+      }
+    }
+  },
+  "selector": {
+    "delivered_filter_type": {
+      "options": {
+        "days": "Days",
+        "parcels": "Number of parcels"
+      }
+    },
+    "direction": {
+      "options": {
+        "incoming": "Incoming",
+        "outgoing": "Outgoing"
+      }
+    }
+  },
+  "services": {
+    "track_parcel": {
+      "name": "Track parcel",
+      "description": "Start tracking a parcel (package) by its tracking code. The carrier is detected from the code unless you name it.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Server",
+          "description": "The Open Parcels server. Only needed when more than one is set up."
+        },
+        "tracking_code": {
+          "name": "Tracking code",
+          "description": "The tracking code of the parcel."
+        },
+        "carrier": {
+          "name": "Carrier",
+          "description": "The carrier's Open Parcels id, for example dhl. Leave empty to detect it."
+        },
+        "label": {
+          "name": "Label",
+          "description": "An optional name for the parcel."
+        },
+        "direction": {
+          "name": "Direction",
+          "description": "Whether you receive or send the parcel."
+        }
+      }
+    },
+    "archive_parcel": {
+      "name": "Archive parcel",
+      "description": "Archive a parcel so it no longer shows up. Name it by tracking code or by id.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Server",
+          "description": "The Open Parcels server. Only needed when more than one is set up."
+        },
+        "tracking_code": {
+          "name": "Tracking code",
+          "description": "The tracking code of the parcel."
+        },
+        "parcel_id": {
+          "name": "Parcel id",
+          "description": "The Open Parcels id of the parcel (the id attribute)."
+        }
+      }
+    },
+    "refresh": {
+      "name": "Refresh",
+      "description": "Re-read everything from the server. With a parcel, first run the sources that follow it.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Server",
+          "description": "The Open Parcels server. Only needed when more than one is set up."
+        },
+        "tracking_code": {
+          "name": "Tracking code",
+          "description": "Optional: the tracking code of a parcel to update first."
+        },
+        "parcel_id": {
+          "name": "Parcel id",
+          "description": "Optional: the Open Parcels id of a parcel to update first."
+        }
+      }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "parcel_registered": "A parcel was registered",
+      "parcel_status_changed": "A parcel's status changed",
+      "parcel_delivered": "A parcel was delivered",
+      "parcel_delivery_time_changed": "A parcel's expected delivery time changed",
+      "outgoing_parcel_registered": "An outgoing parcel was registered",
+      "outgoing_parcel_delivered": "An outgoing parcel was delivered",
+      "parcel_live_updated": "A parcel's live courier tracking changed",
+      "parcel_removed": "A parcel was removed",
+      "source_state_changed": "A source's state changed"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "event_stream": {
+        "name": "Event stream"
+      },
+      "source_problem": {
+        "name": "Problem"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Refresh"
+      }
+    },
+    "calendar": {
+      "deliveries": {
+        "name": "Deliveries"
+      }
+    },
+    "device_tracker": {
+      "courier": {
+        "name": "Courier {barcode}"
+      }
+    },
+    "sensor": {
+      "incoming": {
+        "name": "Incoming parcels",
+        "unit_of_measurement": "parcels"
+      },
+      "outgoing": {
+        "name": "Outgoing parcels",
+        "unit_of_measurement": "parcels"
+      },
+      "delivered": {
+        "name": "Delivered parcels",
+        "unit_of_measurement": "parcels"
+      },
+      "outgoing_delivered": {
+        "name": "Outgoing delivered parcels",
+        "unit_of_measurement": "parcels"
+      },
+      "incoming_parcels": {
+        "name": "Incoming parcels",
+        "unit_of_measurement": "parcels"
+      },
+      "delivered_parcels": {
+        "name": "Delivered parcels",
+        "unit_of_measurement": "parcels"
+      },
+      "outgoing_parcels": {
+        "name": "Outgoing parcels",
+        "unit_of_measurement": "parcels"
+      },
+      "outgoing_delivered_parcels": {
+        "name": "Outgoing delivered parcels",
+        "unit_of_measurement": "parcels"
+      },
+      "en_route_to_pickup_point": {
+        "name": "En route to pickup point",
+        "unit_of_measurement": "parcels"
+      },
+      "awaiting_pickup": {
+        "name": "Awaiting pickup",
+        "unit_of_measurement": "parcels"
+      },
+      "next_delivery": {
+        "name": "Next delivery"
+      },
+      "last_update": {
+        "name": "Last successful update"
+      },
+      "source_state": {
+        "name": "Source state",
+        "state": {
+          "ok": "OK",
+          "needs_sign_in": "Needs sign-in",
+          "error": "Error",
+          "disabled": "Disabled"
+        }
+      },
+      "parcel": {
+        "name": "Parcel {barcode}"
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "The Open Parcels server refused the API token."
+    },
+    "update_failed": {
+      "message": "Could not read from the Open Parcels server: {error}"
+    },
+    "sync_failed": {
+      "message": "Could not run the source: {error}"
+    },
+    "calendar_failed": {
+      "message": "Could not read the calendar: {error}"
+    },
+    "no_loaded_entry": {
+      "message": "No Open Parcels server is loaded."
+    },
+    "entry_required": {
+      "message": "More than one Open Parcels server is set up. Choose one."
+    },
+    "parcel_not_found": {
+      "message": "No parcel {parcel} is known."
+    },
+    "parcel_required": {
+      "message": "Name the parcel by tracking code or id."
+    },
+    "request_refused": {
+      "message": "The server refused the request: {error}"
+    },
+    "request_failed": {
+      "message": "The request to the server failed: {error}"
+    }
+  }
+}

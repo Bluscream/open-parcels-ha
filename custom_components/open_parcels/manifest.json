@@ -1,0 +1,15 @@
+{
+  "domain": "open_parcels",
+  "name": "Open Parcels",
+  "codeowners": ["@Bluscream"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/Bluscream/open-parcels-ha",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Bluscream/open-parcels-ha/issues",
+  "quality_scale": "silver",
+  "requirements": [],
+  "version": "0.1.0",
+  "zeroconf": ["_open-parcels._tcp.local."]
+}

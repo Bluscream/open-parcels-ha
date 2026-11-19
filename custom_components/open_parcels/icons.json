@@ -1,0 +1,38 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "event_stream": { "default": "mdi:lan-connect", "state": { "off": "mdi:lan-disconnect" } },
+      "source_problem": { "default": "mdi:account-check", "state": { "on": "mdi:account-alert" } }
+    },
+    "button": {
+      "refresh": { "default": "mdi:refresh" }
+    },
+    "calendar": {
+      "deliveries": { "default": "mdi:truck-delivery-outline" }
+    },
+    "device_tracker": {
+      "courier": { "default": "mdi:truck-fast" }
+    },
+    "sensor": {
+      "incoming": { "default": "mdi:package-variant-closed" },
+      "outgoing": { "default": "mdi:package-up" },
+      "delivered": { "default": "mdi:package-variant" },
+      "outgoing_delivered": { "default": "mdi:package-check" },
+      "incoming_parcels": { "default": "mdi:package-variant-closed" },
+      "delivered_parcels": { "default": "mdi:package-variant" },
+      "outgoing_parcels": { "default": "mdi:package-up" },
+      "outgoing_delivered_parcels": { "default": "mdi:package-check" },
+      "en_route_to_pickup_point": { "default": "mdi:truck-delivery" },
+      "awaiting_pickup": { "default": "mdi:store-clock" },
+      "next_delivery": { "default": "mdi:clock-fast" },
+      "last_update": { "default": "mdi:clock-check-outline" },
+      "source_state": { "default": "mdi:account-sync" },
+      "parcel": { "default": "mdi:package-variant-closed" }
+    }
+  },
+  "services": {
+    "track_parcel": { "service": "mdi:package-variant-plus" },
+    "archive_parcel": { "service": "mdi:archive-arrow-down" },
+    "refresh": { "service": "mdi:refresh" }
+  }
+}

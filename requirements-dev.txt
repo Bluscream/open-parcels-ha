@@ -1,0 +1,7 @@
+pytest
+pytest-asyncio
+pytest-cov
+pytest-homeassistant-custom-component
+ruff==0.17.0
+mypy==2.4.0
+

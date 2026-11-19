@@ -1,0 +1,259 @@
+"""Client for the Open Parcels REST API and its Server-Sent Events stream."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass
+from datetime import datetime
+import json
+from typing import Any
+import uuid
+
+import aiohttp
+
+API_PREFIX = "/api/v1"
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
+
+class OpenParcelsError(Exception):
+    """Base error for the Open Parcels client."""
+
+
+class OpenParcelsConnectionError(OpenParcelsError):
+    """The server could not be reached."""
+
+
+class OpenParcelsApiError(OpenParcelsError):
+    """The server answered with an error."""
+
+    def __init__(self, status: int, code: str | None, message: str | None) -> None:
+        """Initialise with the HTTP status and the server's error body."""
+        super().__init__(f"HTTP {status}: {code or 'error'}: {message or ''}".rstrip())
+        self.status = status
+        self.code = code
+        self.message = message
+
+
+class OpenParcelsAuthError(OpenParcelsApiError):
+    """The token was refused (401)."""
+
+
+class OpenParcelsScopeError(OpenParcelsApiError):
+    """The token lacks a scope (403)."""
+
+
+class OpenParcelsNotFoundError(OpenParcelsApiError):
+    """The resource does not exist (404)."""
+
+
+@dataclass(frozen=True, slots=True)
+class SseMessage:
+    """One message from the event stream."""
+
+    event: str
+    data: str
+    id: str | None
+
+
+class SseParser:
+    """Incremental parser for the text/event-stream format."""
+
+    def __init__(self) -> None:
+        """Start with an empty message."""
+        self._event = ""
+        self._data: list[str] = []
+        self._id: str | None = None
+
+    def feed_line(self, line: str) -> SseMessage | None:
+        """Consume one line (without its terminator); return a message when one ends."""
+        if line == "":
+            return self._dispatch()
+        if line.startswith(":"):
+            return None
+        field, sep, value = line.partition(":")
+        if sep and value.startswith(" "):
+            value = value[1:]
+        if field == "event":
+            self._event = value
+        elif field == "data":
+            self._data.append(value)
+        elif field == "id" and "\0" not in value:
+            self._id = value
+        return None
+
+    def _dispatch(self) -> SseMessage | None:
+        if not self._data and not self._event:
+            self._id = None
+            return None
+        message = SseMessage(
+            event=self._event or "message", data="\n".join(self._data), id=self._id
+        )
+        self._event = ""
+        self._data = []
+        self._id = None
+        return message
+
+
+def normalize_url(url: str) -> str:
+    """Return the server's base URL without a trailing slash or API prefix."""
+    base = url.strip().rstrip("/")
+    return base.removesuffix(API_PREFIX)
+
+
+class OpenParcelsClient:
+    """Thin async client; every method maps to one API route."""
+
+    def __init__(self, session: aiohttp.ClientSession, url: str, token: str) -> None:
+        """Initialise with a shared session, the server URL and a Bearer token."""
+        self._session = session
+        self.base_url = normalize_url(url)
+        self._token = token
+
+    @property
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._token}", "Accept": "application/json"}
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        body: dict[str, Any] | None = None,
+    ) -> Any:
+        url = f"{self.base_url}{API_PREFIX}{path}"
+        try:
+            async with self._session.request(
+                method,
+                url,
+                headers=self._headers,
+                params=params,
+                json=body,
+                timeout=REQUEST_TIMEOUT,
+            ) as response:
+                if response.status >= 400:
+                    await _raise_for_status(response)
+                if response.status in (202, 204):
+                    return None
+                return await response.json(content_type=None)
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise OpenParcelsConnectionError(str(err) or type(err).__name__) from err
+
+    async def async_get_sources(self) -> list[dict[str, Any]]:
+        """GET /sources."""
+        return list(await self._request("GET", "/sources"))
+
+    async def async_get_carriers(self) -> list[dict[str, Any]]:
+        """GET /carriers."""
+        return list(await self._request("GET", "/carriers"))
+
+    async def async_get_parcels(
+        self, *, include_history: bool, limit: int
+    ) -> list[dict[str, Any]]:
+        """GET /parcels: every parcel that is not archived."""
+        params = {
+            "include_history": "true" if include_history else "false",
+            "limit": str(limit),
+        }
+        return list(await self._request("GET", "/parcels", params=params))
+
+    async def async_get_calendar(
+        self, start: datetime, end: datetime
+    ) -> list[dict[str, Any]]:
+        """GET /calendar for a range."""
+        params = {"from": start.isoformat(), "to": end.isoformat()}
+        return list(await self._request("GET", "/calendar", params=params))
+
+    async def async_track_parcel(
+        self,
+        barcode: str,
+        *,
+        carrier: str | None = None,
+        label: str | None = None,
+        direction: str = "incoming",
+    ) -> dict[str, Any]:
+        """POST /parcels: start tracking a code."""
+        body: dict[str, Any] = {"barcode": barcode, "direction": direction}
+        if carrier:
+            body["carrier"] = carrier
+        if label:
+            body["label"] = label
+        return dict(await self._request("POST", "/parcels", body=body))
+
+    async def async_archive_parcel(self, parcel_id: str) -> dict[str, Any]:
+        """PATCH /parcels/{id} with archived=true."""
+        return dict(
+            await self._request(
+                "PATCH", f"/parcels/{parcel_id}", body={"archived": True}
+            )
+        )
+
+    async def async_sync_source(self, source_id: str) -> None:
+        """POST /sources/{id}/sync."""
+        await self._request("POST", f"/sources/{source_id}/sync")
+
+    async def async_validate(self) -> None:
+        """Check the token can read and write, without changing anything.
+
+        Reading is checked by listing the sources. Writing is checked by asking
+        to sync a source that cannot exist: a token with the write scope gets
+        404, one without it gets 403.
+        """
+        await self.async_get_sources()
+        try:
+            await self.async_sync_source(str(uuid.uuid4()))
+        except OpenParcelsNotFoundError:
+            return
+
+    async def async_stream_events(
+        self,
+        last_event_id: str | None,
+        read_timeout: float,
+        on_open: Callable[[], None] | None = None,
+    ) -> AsyncIterator[SseMessage]:
+        """Yield messages from GET /events until the server closes the stream.
+
+        ``on_open`` runs once the server has accepted the stream.
+        """
+        headers = {**self._headers, "Accept": "text/event-stream"}
+        if last_event_id is not None:
+            headers["Last-Event-ID"] = last_event_id
+        timeout = aiohttp.ClientTimeout(
+            total=None, sock_connect=30, sock_read=read_timeout
+        )
+        parser = SseParser()
+        try:
+            async with self._session.get(
+                f"{self.base_url}{API_PREFIX}/events", headers=headers, timeout=timeout
+            ) as response:
+                if response.status >= 400:
+                    await _raise_for_status(response)
+                if on_open is not None:
+                    on_open()
+                async for raw_line in response.content:
+                    line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                    message = parser.feed_line(line)
+                    if message is not None:
+                        yield message
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise OpenParcelsConnectionError(str(err) or type(err).__name__) from err
+
+
+async def _raise_for_status(response: aiohttp.ClientResponse) -> None:
+    code: str | None = None
+    message: str | None = None
+    try:
+        body = json.loads(await response.text())
+    except (ValueError, aiohttp.ClientError):
+        body = None
+    if isinstance(body, dict):
+        code = body.get("error") if isinstance(body.get("error"), str) else None
+        message = body.get("message") if isinstance(body.get("message"), str) else None
+    status = response.status
+    if status == 401:
+        raise OpenParcelsAuthError(status, code, message)
+    if status == 403:
+        raise OpenParcelsScopeError(status, code, message)
+    if status == 404:
+        raise OpenParcelsNotFoundError(status, code, message)
+    raise OpenParcelsApiError(status, code, message)

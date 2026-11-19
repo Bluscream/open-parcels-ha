@@ -1,0 +1,52 @@
+track_parcel:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: open_parcels
+    tracking_code:
+      required: true
+      example: "EXAMPLE0000000001"
+      selector:
+        text:
+    carrier:
+      example: dhl
+      selector:
+        text:
+    label:
+      selector:
+        text:
+    direction:
+      default: incoming
+      selector:
+        select:
+          translation_key: direction
+          options:
+            - incoming
+            - outgoing
+
+archive_parcel:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: open_parcels
+    tracking_code:
+      selector:
+        text:
+    parcel_id:
+      selector:
+        text:
+
+refresh:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: open_parcels
+    tracking_code:
+      selector:
+        text:
+    parcel_id:
+      selector:
+        text:
