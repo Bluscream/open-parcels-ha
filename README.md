@@ -1,6 +1,6 @@
 # Open Parcels for Home Assistant
 
-Parcel (package) tracking in Home Assistant from an [Open Parcels](https://github.com/Bluscream/open-parcels)
+Parcel (package) tracking in Home Assistant from an [Open Parcels](https://github.com/open-parcels/open-parcels)
 server. One integration covers every carrier, shop and mailbox the server follows:
 
 - each **source** on the server (a carrier account, a tracking source, a shop or a mailbox) becomes
@@ -23,8 +23,8 @@ Coming from the per-carrier parcel integrations or the Parcel Aggregator? See
 
 ## Installation
 
-**HACS (custom repository):** HACS → ⋮ → Custom repositories → add this repository as an
-*Integration* → install **Open Parcels** → restart Home Assistant.
+**HACS (custom repository):** HACS → ⋮ → Custom repositories → add
+`https://github.com/open-parcels/open-parcels-ha` as an *Integration* → install **Open Parcels** → restart Home Assistant.
 
 **Manual:** copy `custom_components/open_parcels` into your Home Assistant
 `config/custom_components/` folder and restart.
