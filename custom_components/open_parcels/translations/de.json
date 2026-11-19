@@ -256,6 +256,9 @@
     "update_failed": {
       "message": "Lesen vom Open-Parcels-Server fehlgeschlagen: {error}"
     },
+    "sync_backing_off": {
+      "message": "Der Versanddienst hat open-parcels um eine Pause gebeten: {message}"
+    },
     "sync_failed": {
       "message": "Die Quelle konnte nicht ausgeführt werden: {error}"
     },

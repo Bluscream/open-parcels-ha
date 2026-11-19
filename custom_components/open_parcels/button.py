@@ -8,7 +8,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import OpenParcelsConfigEntry
-from .api import OpenParcelsError
+from .api import OpenParcelsApiError, OpenParcelsError
 from .const import DOMAIN
 from .coordinator import OpenParcelsCoordinator
 from .entity import OpenParcelsEntity, async_add_dynamic, device_for_source
@@ -63,6 +63,19 @@ class SourceSyncButton(OpenParcelsEntity, ButtonEntity):
         """Run the source; its results arrive through the event stream."""
         try:
             await self.coordinator.client.async_sync_source(self._source_id)
+        except OpenParcelsApiError as err:
+            # A captcha pause or the carrier's rate limit: the server says how long.
+            if err.status in (409, 429) and err.message:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="sync_backing_off",
+                    translation_placeholders={"message": err.message},
+                ) from err
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="sync_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
         except OpenParcelsError as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,

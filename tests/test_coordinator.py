@@ -384,3 +384,22 @@ def test_position_needs_numeric_coordinates() -> None:
         _position_from_live({"state": "next_stop", "latitude": 1, "longitude": 2})
         is None
     )
+
+
+async def test_replayed_event_never_overwrites_newer_state(
+    hass: HomeAssistant, loaded: MockConfigEntry, stream: FakeStream
+) -> None:
+    """A replayed parcel event older than the REST state fires but keeps the state."""
+    fired = events(hass, f"{DOMAIN}_parcel_status_changed")
+    coordinator = loaded.runtime_data.coordinator
+    stored = coordinator.data.parcels[_parcel(1)["id"]]
+    stale = _parcel(1, status="registered", updated_at="2000-01-01T00:00:00.000Z")
+    stream.push(
+        "parcel.status_changed",
+        json.dumps({"parcel": stale, "old_status": "x", "new_status": "registered"}),
+        "50",
+    )
+    await hass.async_block_till_done()
+    assert len(fired) == 1
+    assert coordinator.data.parcels[stale["id"]] is stored
+    assert stored["status"] != "registered"

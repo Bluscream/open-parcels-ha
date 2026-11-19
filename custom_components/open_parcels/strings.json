@@ -256,6 +256,9 @@
     "update_failed": {
       "message": "Could not read from the Open Parcels server: {error}"
     },
+    "sync_backing_off": {
+      "message": "The carrier asked open-parcels to wait: {message}"
+    },
     "sync_failed": {
       "message": "Could not run the source: {error}"
     },

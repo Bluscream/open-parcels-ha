@@ -136,3 +136,40 @@ async def test_stable_connection_resets_backoff(
         stream.queue.put_nowait(OpenParcelsConnectionError("second drop"))
         await _settle(hass)
     assert delays == [STREAM_BACKOFF_INITIAL_SECONDS, STREAM_BACKOFF_INITIAL_SECONDS]
+
+
+async def test_first_connect_resyncs_once_open(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    stream: FakeStream,
+    client: MagicMock,
+) -> None:
+    """The first connection reloads over REST once open, closing the setup gap,
+    and continues from the seq the server's `ready` carries."""
+    coordinator = loaded.runtime_data.coordinator
+    stream.push("ready", json.dumps({"seq": 12}), "12")
+    await _settle(hass)
+    # One load at setup, one after the stream opened.
+    assert client.async_get_parcels.await_count == 2
+    assert coordinator.last_event_id == "12"
+
+
+async def test_server_resync_reloads_and_resets_the_id(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    stream: FakeStream,
+    client: MagicMock,
+    delays: list[float],
+) -> None:
+    """`resync` (the id was too old) reloads everything and continues from its seq."""
+    coordinator = loaded.runtime_data.coordinator
+    stream.push("vocab.unknown", json.dumps({}), "900")
+    await _settle(hass)
+    before = client.async_get_parcels.await_count
+    stream.push("resync", json.dumps({"seq": 40, "reason": "expired"}), "40")
+    await _settle(hass)
+    assert client.async_get_parcels.await_count == before + 1
+    assert coordinator.last_event_id == "40"
+    stream.queue.put_nowait(OpenParcelsConnectionError("reset"))
+    await _settle(hass)
+    assert stream.calls[-1] == "40"

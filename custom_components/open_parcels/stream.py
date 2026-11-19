@@ -49,7 +49,9 @@ class _Attempt:
         self.opened_at = self._hass.loop.time()
         self._coordinator.async_set_stream_connected(True)
         if self._resync:
-            self._hass.async_create_task(self._coordinator.async_request_refresh())
+            # Directly, not through the debouncer: its cooldown would hold back the
+            # next refresh someone asks for (a button, a service call).
+            self._hass.async_create_task(self._coordinator.async_refresh())
 
 
 async def async_run_stream(
@@ -57,17 +59,19 @@ async def async_run_stream(
 ) -> None:
     """Keep the event stream open until the entry unloads.
 
-    The first connection starts without Last-Event-ID: the REST resync has
-    just loaded the current state, and replaying the past would re-fire events
-    that happened while Home Assistant was not running. Reconnects send the
-    last id seen so nothing in between is lost. When no id has been seen yet,
-    a resync after reconnecting fills the gap instead.
+    The first connection starts without Last-Event-ID: replaying the past would
+    re-fire events that happened while Home Assistant was not running. The
+    server answers it with `ready` and the current sequence, which becomes the
+    last id; a REST resync once the stream is open covers whatever changed
+    between the setup's first load and the connect. Reconnects send the last
+    id seen so nothing in between is lost; whenever none is known yet, the same
+    resync after opening fills the gap. A `resync` message from the server
+    (the id was too old, or the server's database was reset) also reloads.
     """
     delay = STREAM_BACKOFF_INITIAL_SECONDS
-    first = True
     while True:
         last_id = coordinator.last_event_id
-        attempt = _Attempt(hass, coordinator, resync=not first and last_id is None)
+        attempt = _Attempt(hass, coordinator, resync=last_id is None)
         try:
             async for message in coordinator.client.async_stream_events(
                 last_id, STREAM_READ_TIMEOUT_SECONDS, attempt.on_open
@@ -82,7 +86,6 @@ async def async_run_stream(
         except OpenParcelsError as err:
             _LOGGER.debug("Event stream error: %s", err)
         coordinator.async_set_stream_connected(False)
-        first = False
         # Only a connection that stayed up a while resets the backoff, so a
         # server that accepts and drops at once cannot cause a tight loop.
         if (

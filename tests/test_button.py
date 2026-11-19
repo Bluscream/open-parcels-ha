@@ -9,7 +9,10 @@ from homeassistant.exceptions import HomeAssistantError
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.open_parcels.api import OpenParcelsConnectionError
+from custom_components.open_parcels.api import (
+    OpenParcelsApiError,
+    OpenParcelsConnectionError,
+)
 
 from . import payloads
 
@@ -41,3 +44,25 @@ async def test_source_sync_button(
             {"entity_id": "button.dhl_germany_abc123_refresh"},
             blocking=True,
         )
+
+
+async def test_sync_while_backing_off_shows_the_servers_wait(
+    hass: HomeAssistant, loaded: MockConfigEntry, client: MagicMock
+) -> None:
+    """A 429 from a source in its captcha pause reaches the user with the wait."""
+    client.async_sync_source.side_effect = OpenParcelsApiError(
+        429,
+        "source_backing_off",
+        "The carrier asked us to wait; this source runs again in 6 hours.",
+    )
+    with pytest.raises(HomeAssistantError) as raised:
+        await hass.services.async_call(
+            "button",
+            "press",
+            {"entity_id": "button.dhl_germany_abc123_refresh"},
+            blocking=True,
+        )
+    assert raised.value.translation_key == "sync_backing_off"
+    assert raised.value.translation_placeholders == {
+        "message": "The carrier asked us to wait; this source runs again in 6 hours."
+    }

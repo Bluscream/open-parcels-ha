@@ -88,6 +88,11 @@ LIVE_POSITION_EVENT = "parcel.live_position"
 # Source removed (deleted, or merged into another): fired on the bus, but not a device
 # trigger, because the device it would belong to is removed with it.
 SOURCE_REMOVED_EVENT = "source.removed"
+# Stream control messages: both carry the server's current sequence as their id.
+# `ready` opens a stream sent without Last-Event-ID; `resync` says the id sent
+# could not be replayed (too old, or the server's database was reset).
+READY_EVENT = "ready"
+RESYNC_EVENT = "resync"
 
 # Dispatcher signal for courier positions, formatted with the entry id.
 SIGNAL_LIVE_POSITION = f"{DOMAIN}_live_position_{{}}"

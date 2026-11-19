@@ -31,6 +31,8 @@ from .const import (
     LIVE_POSITION_EVENT,
     LIVE_TRACKING_STATES,
     PARCEL_LIST_LIMIT,
+    READY_EVENT,
+    RESYNC_EVENT,
     SERVER_EVENT_SUFFIXES,
     SIGNAL_LIVE_POSITION,
     SOURCE_REMOVED_EVENT,
@@ -99,6 +101,15 @@ def _position_from_live(live: Any) -> CourierPosition | None:
         position_at=live.get("position_at"),
         stops_away=stops if isinstance(stops, int) else None,
     )
+
+
+def _older(parcel: Mapping[str, Any], stored: Mapping[str, Any] | None) -> bool:
+    """Whether an event's parcel is older than the stored one, by `updated_at`."""
+    if stored is None:
+        return False
+    new = dt_util.parse_datetime(str(parcel.get("updated_at") or ""))
+    old = dt_util.parse_datetime(str(stored.get("updated_at") or ""))
+    return new is not None and old is not None and new < old
 
 
 class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
@@ -359,9 +370,21 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
         if not isinstance(payload, dict):
             return
         if message.id is not None:
+            # `resync` and `ready` carry the server's current sequence: continuing
+            # from it is the reset the server asks for.
             self.last_event_id = message.id
         self.events_received += 1
 
+        if message.event == RESYNC_EVENT:
+            _LOGGER.info(
+                "The server could not replay missed events (%s); reloading everything",
+                payload.get("reason", "unknown"),
+            )
+            # Not debounced: the reload must not wait behind a cooldown.
+            self.hass.async_create_task(self.async_refresh())
+            return
+        if message.event == READY_EVENT:
+            return
         if message.event == LIVE_POSITION_EVENT:
             self._apply_position(payload)
             return
@@ -474,7 +497,11 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
             return
         parcel_id = str(parcel["id"])
         previous = self.data.parcels.get(parcel_id)
-        if event_type in _GONE_EVENTS:
+        if event_type not in _GONE_EVENTS and _older(parcel, previous):
+            # A replayed event older than what the last REST load returned: the
+            # bus event still fires (it happened), the newer stored state stays.
+            pass
+        elif event_type in _GONE_EVENTS:
             self.data.parcels.pop(parcel_id, None)
             self.positions.pop(parcel_id, None)
         else:
