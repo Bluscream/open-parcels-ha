@@ -244,6 +244,7 @@ async def test_options(
         {
             "resync_minutes": 60.0,
             "include_history": True,
+            "order_entities": True,
             "delivered_filter_type": "parcels",
             "delivered_filter_amount": 5.0,
         },
@@ -252,6 +253,7 @@ async def test_options(
     assert loaded.options == {
         "resync_minutes": 60,
         "include_history": True,
+        "order_entities": True,
         "delivered_filter_type": "parcels",
         "delivered_filter_amount": 5,
     }

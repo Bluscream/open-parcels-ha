@@ -1,3 +1,17 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/open-parcels/open-parcels/master/docs/branding/banner-on-dark.png">
+    <img alt="Open Parcels" src="https://raw.githubusercontent.com/open-parcels/open-parcels/master/docs/branding/banner-on-light.png" width="640">
+  </picture>
+</p>
+<p align="center">
+  <a href="https://hacs.xyz/docs/faq/custom_repositories/"><img alt="HACS custom repository" src="https://img.shields.io/badge/HACS-custom-41BDF5?logo=homeassistantcommunitystore&logoColor=white"></a>
+  <a href="https://github.com/open-parcels/open-parcels-ha/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/open-parcels/open-parcels-ha?style=flat"></a>
+  <a href="https://github.com/open-parcels/open-parcels-ha/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/open-parcels/open-parcels-ha"></a>
+  <a href="https://github.com/open-parcels/open-parcels-ha/commits"><img alt="Last commit" src="https://img.shields.io/github/last-commit/open-parcels/open-parcels-ha"></a>
+  <a href="https://github.com/open-parcels/open-parcels-ha/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/open-parcels/open-parcels-ha"></a>
+</p>
+
 # Open Parcels for Home Assistant
 
 Parcel (package) tracking in Home Assistant from an [Open Parcels](https://github.com/open-parcels/open-parcels)
@@ -74,7 +88,8 @@ name, the name is not repeated. It is linked to the hub (`via_device`).
 | `sensor.<device>_source_state` | `ok`, `needs_sign_in`, `error` or `disabled` (diagnostic), with `detail`, `plugin`, `kind`, `last_run_at`, `next_run_at`, `last_ok_at` |
 | `binary_sensor.<device>_problem` | on while the source needs a sign-in or fails (diagnostic) |
 | `button.<device>_refresh` | asks the server to run this source now |
-| `device_tracker.<device>_parcel_<barcode>` | one per open parcel (announced, in transit, out for delivery, at a pickup point, returning, problem). State: the status key. On the map once its position is known: the live courier, else the latest scan with coordinates. Delivered and finished parcels get no entity; they are listed in the list sensors (`parcel_ids`, `parcels`). |
+| `device_tracker.<device>_parcel_<barcode>` | one per open parcel (announced, in transit, out for delivery, at a pickup point, returning, problem). State: the status key. On the map once its position is known: the live courier, else the latest scan with coordinates. Delivered and finished parcels get no entity; they are listed in the list sensors (`parcel_ids`, `parcels`). Named by the server's *Default parcel label* setting (its label, item names or the tracking code; entity ids always use the code). Entity picture: a grid of its item pictures (1, 2×2 or 3×3), served by Home Assistant under a signed address. |
+| `sensor.<device>_order_<shop>_<number>` | optional (*Order entities*): one per open order. State `in_progress` or `partially_delivered`; attributes: shop, order number, counts, `items` (with the code of the parcel carrying each, or null) and `parcels`. |
 
 A parcel belongs to the source that follows it as its primary source, then a hand-off, then a
 mailbox.
@@ -153,6 +168,7 @@ hub's for all of them.
 
 - **Full resync interval** (default 30 min).
 - **Include status history** (off).
+- **Order entities** (off): a sensor per open order, with its items and parcels.
 - **Delivered parcels: filter by** days or number of parcels, and the amount (default: last 7
   days).
 

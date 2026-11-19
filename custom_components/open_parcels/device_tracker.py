@@ -16,9 +16,10 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import OpenParcelsConfigEntry
-from .const import SIGNAL_LIVE_POSITION
+from .const import CONF_API_TOKEN, SIGNAL_LIVE_POSITION
 from .coordinator import OpenParcelsCoordinator, ParcelPosition
 from .entity import OpenParcelsEntity, async_add_dynamic, device_for_source
+from .picture import picture_url, picture_version
 
 PARALLEL_UPDATES = 0
 
@@ -66,9 +67,8 @@ class ParcelTracker(OpenParcelsEntity, TrackerEntity):
         super().__init__(coordinator, f"parcel_{parcel_id}")
         self._parcel_id = parcel_id
         parcel = coordinator.suite_parcel(parcel_id) or {}
-        self._attr_translation_placeholders = {
-            "barcode": str(parcel.get("barcode") or parcel_id)
-        }
+        self._barcode = str(parcel.get("barcode") or parcel_id)
+        self._attr_translation_placeholders = {"barcode": self._barcode}
         # The base class types device info as None, but a tracker may belong
         # to a device; the parcel belongs with its source.
         self._attr_device_info = device_for_source(  # type: ignore[assignment]
@@ -101,6 +101,39 @@ class ParcelTracker(OpenParcelsEntity, TrackerEntity):
         return (
             super().available
             and self.coordinator.suite_parcel(self._parcel_id) is not None
+        )
+
+    @property
+    def suggested_object_id(self) -> str | None:
+        """Entity ids stay on the tracking code, whatever the parcel is called."""
+        return f"parcel {self._barcode}"
+
+    @property
+    def name(self) -> str | None:
+        """The server's display name (label or item names); "Parcel <code>" otherwise."""
+        parcel = self.coordinator.suite_parcel(self._parcel_id) or {}
+        display = parcel.get("display_name")
+        if isinstance(display, str) and display and display != parcel.get("barcode"):
+            return display
+        return super().name  # type: ignore[return-value]
+
+    @property
+    def entity_picture(self) -> str | None:
+        """A grid of the item pictures, when the parcel has any."""
+        parcel = self.coordinator.suite_parcel(self._parcel_id) or {}
+        urls = [
+            str(item["image_url"])
+            for item in parcel.get("items") or []
+            if isinstance(item, dict) and item.get("image_url")
+        ]
+        if not urls:
+            return None
+        entry = self.coordinator.config_entry
+        return picture_url(
+            entry.data[CONF_API_TOKEN],
+            entry.entry_id,
+            self._parcel_id,
+            picture_version(urls),
         )
 
     @property

@@ -81,6 +81,13 @@ async def async_setup_entry(
         lambda: coordinator.data.sources if coordinator.data else (),
         _source_entities,
     )
+    async_add_dynamic(
+        coordinator,
+        entry,
+        async_add_entities,
+        coordinator.order_keys,
+        lambda key: [OrderSensor(coordinator, key)],
+    )
 
 
 def _suffix(source_id: str | None, key: str) -> str:
@@ -254,4 +261,63 @@ class SourceStateSensor(_SourceEntity, SensorEntity):
             "last_run_at": source.get("last_run_at"),
             "next_run_at": source.get("next_run_at"),
             "last_ok_at": source.get("last_ok_at"),
+        }
+
+
+class OrderSensor(OpenParcelsEntity, SensorEntity):
+    """One open order: how far it is, with its items and parcels (an option)."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_translation_key = "order"
+    _attr_options = ["in_progress", "partially_delivered"]
+    _unrecorded_attributes = frozenset({"items", "parcels"})
+
+    def __init__(self, coordinator: OpenParcelsCoordinator, key: str) -> None:
+        """Place the order on its shop's device (the hub when unknown)."""
+        super().__init__(coordinator, f"order_{key}")
+        self._key = key
+        order = coordinator.open_orders().get(key) or {}
+        self._attr_translation_placeholders = {
+            "shop": str(order.get("shop") or ""),
+            "number": str(order.get("order_number") or key),
+        }
+        self._attr_device_info = device_for_source(
+            coordinator.config_entry, order.get("source_id")
+        )
+
+    @property
+    def _order(self) -> dict[str, Any] | None:
+        return self.coordinator.open_orders().get(self._key)
+
+    @property
+    def available(self) -> bool:
+        """Unavailable once the order is finished (the entity is then removed)."""
+        return super().available and self._order is not None
+
+    @property
+    def native_value(self) -> str | None:
+        """In progress, or partially delivered once some of its parcels arrived."""
+        order = self._order
+        if order is None:
+            return None
+        delivered = [parcel for parcel in order["parcels"] if parcel["delivered"]]
+        return "partially_delivered" if delivered else "in_progress"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Shop, number, counts, items (with their parcel's code) and parcels."""
+        order = self._order or {}
+        parcels = order.get("parcels") or []
+        codes = {parcel["id"]: parcel["barcode"] for parcel in parcels}
+        return {
+            "shop": order.get("shop"),
+            "order_number": order.get("order_number"),
+            "parcel_count": len(parcels),
+            "delivered_count": sum(1 for parcel in parcels if parcel["delivered"]),
+            "items": [
+                {**item, "parcel": codes.get(item.get("parcel_id"))}
+                for item in order.get("items") or []
+                if isinstance(item, dict)
+            ],
+            "parcels": parcels,
         }

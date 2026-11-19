@@ -26,7 +26,8 @@
       "awaiting_pickup": { "default": "mdi:store-clock" },
       "next_delivery": { "default": "mdi:clock-fast" },
       "last_update": { "default": "mdi:clock-check-outline" },
-      "source_state": { "default": "mdi:account-sync" }
+      "source_state": { "default": "mdi:account-sync" },
+      "order": { "default": "mdi:shopping", "state": { "partially_delivered": "mdi:shopping-outline" } }
     }
   },
   "services": {

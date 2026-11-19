@@ -148,6 +148,23 @@ class OpenParcelsClient:
         except (aiohttp.ClientError, TimeoutError) as err:
             raise OpenParcelsConnectionError(str(err) or type(err).__name__) from err
 
+    async def async_get_parcel_picture(self, parcel_id: str) -> bytes | None:
+        """GET /parcels/{id}/picture: the item pictures as one PNG; None without any."""
+        url = f"{self.base_url}{API_PREFIX}/parcels/{parcel_id}/picture"
+        try:
+            async with self._session.get(
+                url,
+                headers={"Authorization": f"Bearer {self._token}"},
+                timeout=REQUEST_TIMEOUT,
+            ) as response:
+                if response.status == 404:
+                    return None
+                if response.status >= 400:
+                    await _raise_for_status(response)
+                return await response.read()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise OpenParcelsConnectionError(str(err) or type(err).__name__) from err
+
     async def async_get_sources(self) -> list[dict[str, Any]]:
         """GET /sources."""
         return list(await self._request("GET", "/sources"))

@@ -65,6 +65,9 @@ MIN_RESYNC_MINUTES = 5
 MAX_RESYNC_MINUTES = 1440
 CONF_INCLUDE_HISTORY = "include_history"
 DEFAULT_INCLUDE_HISTORY = False
+# One sensor per open order (its items and parcels); off by default, like the parcels' list.
+CONF_ORDER_ENTITIES = "order_entities"
+DEFAULT_ORDER_ENTITIES = False
 CONF_DELIVERED_FILTER_TYPE = "delivered_filter_type"
 CONF_DELIVERED_FILTER_AMOUNT = "delivered_filter_amount"
 DEFAULT_DELIVERED_FILTER_TYPE = "days"
@@ -118,9 +121,15 @@ NOT_RUN_YET_DETAIL = "Not run yet."
 # could not be replayed (too old, or the server's database was reset).
 READY_EVENT = "ready"
 RESYNC_EVENT = "resync"
+# A server setting changed (how parcels are named, the home location): read everything again.
+SETTINGS_UPDATED_EVENT = "settings.updated"
 
 # Dispatcher signal for courier positions, formatted with the entry id.
 SIGNAL_LIVE_POSITION = f"{DOMAIN}_live_position_{{}}"
+
+# Parcel pictures (item grids) are served by Home Assistant itself, so the frontend can load
+# them without the server's token: {entry_id}/{parcel_id}, signed.
+PICTURE_URL = "/api/open_parcels/picture/{entry_id}/{parcel_id}"
 
 # Live session states during which the courier's position is meaningful.
 LIVE_TRACKING_STATES = frozenset({"en_route"})

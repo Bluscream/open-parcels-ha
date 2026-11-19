@@ -43,10 +43,12 @@ from .const import (
     CONF_DELIVERED_FILTER_AMOUNT,
     CONF_DELIVERED_FILTER_TYPE,
     CONF_INCLUDE_HISTORY,
+    CONF_ORDER_ENTITIES,
     CONF_RESYNC_MINUTES,
     DEFAULT_DELIVERED_FILTER_AMOUNT,
     DEFAULT_DELIVERED_FILTER_TYPE,
     DEFAULT_INCLUDE_HISTORY,
+    DEFAULT_ORDER_ENTITIES,
     DEFAULT_RESYNC_MINUTES,
     DOMAIN,
     MAX_RESYNC_MINUTES,
@@ -277,7 +279,12 @@ class OpenParcelsOptionsFlow(OptionsFlowWithReload):
                 ),
                 vol.Required(
                     CONF_INCLUDE_HISTORY,
+                    CONF_ORDER_ENTITIES,
                     default=options.get(CONF_INCLUDE_HISTORY, DEFAULT_INCLUDE_HISTORY),
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_ORDER_ENTITIES,
+                    default=options.get(CONF_ORDER_ENTITIES, DEFAULT_ORDER_ENTITIES),
                 ): BooleanSelector(),
                 vol.Required(
                     CONF_DELIVERED_FILTER_TYPE,

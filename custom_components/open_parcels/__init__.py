@@ -15,6 +15,7 @@ from .api import OpenParcelsClient
 from .const import CONF_API_TOKEN, DOMAIN, PLATFORMS
 from .coordinator import OpenParcelsCoordinator
 from .device import hub_device_info, hub_identifier, source_identifier
+from .picture import ParcelPictureView
 from .services import async_setup_services
 from .stream import async_run_stream
 
@@ -33,8 +34,9 @@ type OpenParcelsConfigEntry = ConfigEntry[OpenParcelsRuntimeData]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the services once, independent of any entry."""
+    """Register the services and the parcel-picture view once, independent of any entry."""
     async_setup_services(hass)
+    hass.http.register_view(ParcelPictureView(hass))
     return True
 
 

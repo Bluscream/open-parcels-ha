@@ -60,12 +60,14 @@
         "data": {
           "resync_minutes": "Intervall für den vollständigen Abgleich",
           "include_history": "Statusverlauf einbeziehen",
+          "order_entities": "Bestellungs-Entitäten",
           "delivered_filter_type": "Zugestellte Pakete: filtern nach",
           "delivered_filter_amount": "Zugestellte Pakete: Anzahl"
         },
         "data_description": {
           "resync_minutes": "Änderungen kommen live über den Ereignis-Stream. Dieser langsame Abgleich holt nur nach, was der Stream verpasst hat.",
           "include_history": "Fügt jedem Paket ein Attribut mit allen Statusmeldungen hinzu. Standardmäßig aus.",
+          "order_entities": "Ein Sensor pro offener Bestellung, mit Artikeln und Sendungen. Standardmäßig aus.",
           "delivered_filter_type": "Zugestellte Pakete der letzten X Tage anzeigen oder auf die X neuesten begrenzen.",
           "delivered_filter_amount": "Anzahl der Tage oder Pakete."
         }
@@ -189,6 +191,13 @@
       }
     },
     "sensor": {
+      "order": {
+        "name": "Bestellung {shop} {number}",
+        "state": {
+          "in_progress": "In Bearbeitung",
+          "partially_delivered": "Teilweise zugestellt"
+        }
+      },
       "incoming": {
         "name": "Eingehende Pakete",
         "unit_of_measurement": "Pakete"

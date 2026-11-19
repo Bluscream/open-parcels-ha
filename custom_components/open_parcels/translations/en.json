@@ -60,12 +60,14 @@
         "data": {
           "resync_minutes": "Full resync interval",
           "include_history": "Include status history",
+          "order_entities": "Order entities",
           "delivered_filter_type": "Delivered parcels: filter by",
           "delivered_filter_amount": "Delivered parcels: amount"
         },
         "data_description": {
           "resync_minutes": "Changes arrive live through the event stream. This slow resync only catches anything the stream missed.",
           "include_history": "Add a per-parcel history attribute listing each status update. Off by default.",
+          "order_entities": "Add a sensor per open order, with its items and parcels. Off by default.",
           "delivered_filter_type": "Show delivered parcels from the last X days, or limit to the X most recent.",
           "delivered_filter_amount": "Number of days or parcels to show."
         }
@@ -189,6 +191,13 @@
       }
     },
     "sensor": {
+      "order": {
+        "name": "Order {shop} {number}",
+        "state": {
+          "in_progress": "In progress",
+          "partially_delivered": "Partially delivered"
+        }
+      },
       "incoming": {
         "name": "Incoming parcels",
         "unit_of_measurement": "parcels"

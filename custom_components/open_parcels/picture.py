@@ -1,0 +1,84 @@
+"""Parcel pictures (a grid of the item pictures) served by Home Assistant itself.
+
+The frontend loads entity pictures without the server's token, so Home Assistant
+fetches the picture from the server and serves it under its own address. That
+address is signed with a key derived from the entry's token: nobody can make one
+up, and the picture is all it gives access to. A change in the items changes the
+address, so browsers never keep an outdated picture.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+import hashlib
+import hmac
+from http import HTTPStatus
+
+from aiohttp import web
+from homeassistant.components.http import HomeAssistantView
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant
+
+from .api import OpenParcelsError
+from .const import CONF_API_TOKEN, DOMAIN, PICTURE_URL
+
+
+def _key(token: str) -> bytes:
+    return hashlib.sha256(f"{DOMAIN} picture\0{token}".encode()).digest()
+
+
+def picture_version(image_urls: Iterable[str]) -> str:
+    """A short hash of the pictures, so new items give a new address."""
+    return hashlib.sha256("\n".join(image_urls).encode()).hexdigest()[:12]
+
+
+def _signature(token: str, entry_id: str, parcel_id: str, version: str) -> str:
+    message = f"{entry_id}\0{parcel_id}\0{version}".encode()
+    return hmac.new(_key(token), message, hashlib.sha256).hexdigest()[:32]
+
+
+def picture_url(token: str, entry_id: str, parcel_id: str, version: str) -> str:
+    """The signed address of a parcel's picture."""
+    path = PICTURE_URL.format(entry_id=entry_id, parcel_id=parcel_id)
+    sig = _signature(token, entry_id, parcel_id, version)
+    return f"{path}?v={version}&sig={sig}"
+
+
+class ParcelPictureView(HomeAssistantView):
+    """GET a parcel's item grid; the signature stands in for a login."""
+
+    url = PICTURE_URL
+    name = f"api:{DOMAIN}:picture"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Keep Home Assistant for the entry lookup."""
+        self._hass = hass
+
+    async def get(
+        self, request: web.Request, entry_id: str, parcel_id: str
+    ) -> web.StreamResponse:
+        """Check the signature, then pass the server's PNG on."""
+        entry = self._hass.config_entries.async_get_entry(entry_id)
+        if (
+            entry is None
+            or entry.domain != DOMAIN
+            or entry.state is not ConfigEntryState.LOADED
+        ):
+            return web.Response(status=HTTPStatus.NOT_FOUND)
+        version = request.query.get("v", "")
+        expected = _signature(entry.data[CONF_API_TOKEN], entry_id, parcel_id, version)
+        if not hmac.compare_digest(request.query.get("sig", ""), expected):
+            return web.Response(status=HTTPStatus.FORBIDDEN)
+        try:
+            png = await entry.runtime_data.client.async_get_parcel_picture(parcel_id)
+        except OpenParcelsError:
+            return web.Response(status=HTTPStatus.BAD_GATEWAY)
+        if png is None:
+            return web.Response(status=HTTPStatus.NOT_FOUND)
+        return web.Response(
+            body=png,
+            content_type="image/png",
+            # The address changes with the items, so the picture may be kept long.
+            headers={"Cache-Control": "private, max-age=86400"},
+        )

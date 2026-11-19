@@ -24,8 +24,10 @@ from .const import (
     CALENDAR_FUTURE_DAYS,
     CALENDAR_PAST_DAYS,
     CONF_INCLUDE_HISTORY,
+    CONF_ORDER_ENTITIES,
     CONF_RESYNC_MINUTES,
     DEFAULT_INCLUDE_HISTORY,
+    DEFAULT_ORDER_ENTITIES,
     DEFAULT_RESYNC_MINUTES,
     DOMAIN,
     LIVE_POSITION_EVENT,
@@ -35,6 +37,7 @@ from .const import (
     READY_EVENT,
     RESYNC_EVENT,
     SERVER_EVENT_SUFFIXES,
+    SETTINGS_UPDATED_EVENT,
     SIGNAL_LIVE_POSITION,
     SOURCE_REMOVED_EVENT,
     SOURCE_SNAPSHOT_EVENTS,
@@ -42,6 +45,9 @@ from .const import (
 from .device import find_device, hub_identifier, source_device_info, source_identifier
 from .parcels import (
     apply_delivered_filter,
+    effective_status,
+    is_delivered,
+    order_key,
     owner_source_id,
     sort_parcels_by_ts,
     to_suite_parcel,
@@ -243,6 +249,58 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
             if p.get("id") and p.get("status") in OPEN_STATUSES
         }
 
+    @property
+    def order_entities(self) -> bool:
+        """Whether open orders get a sensor each (an option, off by default)."""
+        return bool(
+            self.config_entry.options.get(CONF_ORDER_ENTITIES, DEFAULT_ORDER_ENTITIES)
+        )
+
+    def open_orders(self) -> dict[str, dict[str, Any]]:
+        """Orders with a parcel still on its way, by a stable key.
+
+        Each has its shop, number, items (with the carrying parcel's code when
+        known) and parcels (id, code, name, status, delivered).
+        """
+        orders: dict[str, dict[str, Any]] = {}
+        for raw in (self.data.parcels if self.data else {}).values():
+            order = raw.get("order")
+            if not isinstance(order, dict) or raw.get("direction") == "outgoing":
+                continue
+            shop, number = (
+                str(order.get("shop") or ""),
+                str(order.get("order_number") or ""),
+            )
+            key = order_key(shop, number)
+            entry = orders.setdefault(
+                key,
+                {
+                    "shop": shop,
+                    "order_number": number,
+                    "items": list(order.get("items") or []),
+                    "parcels": [],
+                    "source_id": owner_source_id(raw),
+                },
+            )
+            entry["parcels"].append(
+                {
+                    "id": raw.get("id"),
+                    "barcode": raw.get("barcode"),
+                    "name": raw.get("display_name") or raw.get("barcode"),
+                    "status": effective_status(raw).value,
+                    "delivered": is_delivered(raw),
+                }
+            )
+        return {
+            key: order
+            for key, order in orders.items()
+            if not all(parcel["delivered"] for parcel in order["parcels"])
+        }
+
+    def order_keys(self) -> set[str]:
+        """Orders that get a sensor: the open ones, when the option is on."""
+        return set(self.open_orders()) if self.order_entities else set()
+
     def parcel_position(self, parcel_id: str) -> ParcelPosition | None:
         """Where a parcel is: the live courier first, else its latest scan with a place."""
         courier = self.positions.get(parcel_id)
@@ -351,11 +409,18 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
                 devices.async_update_device(device.id, via_device_id=hub.id)
 
         tracked = self.tracked_parcel_ids()
+        orders = self.order_keys()
         entities = er.async_get(self.hass)
         parcel_prefix = f"{entry.entry_id}_parcel_"
         courier_prefix = f"{entry.entry_id}_courier_"
+        order_prefix = f"{entry.entry_id}_order_"
         for entity in er.async_entries_for_config_entry(entities, entry.entry_id):
             uid = entity.unique_id
+            if uid.startswith(order_prefix):
+                # Finished orders, and every order once the option is off.
+                if uid[len(order_prefix) :] not in orders:
+                    entities.async_remove(entity.entity_id)
+                continue
             # Earlier versions had a status sensor per parcel and a separate courier
             # tracker; one tracker per open parcel replaces both.
             legacy = uid.startswith(courier_prefix) or (
@@ -422,6 +487,11 @@ class OpenParcelsCoordinator(DataUpdateCoordinator[OpenParcelsData]):
             self.hass.async_create_task(self.async_refresh())
             return
         if message.event == READY_EVENT:
+            return
+        if message.event == SETTINGS_UPDATED_EVENT:
+            # How parcels are named (or the home location) changed on the server:
+            # every parcel's display name may differ, so read everything again.
+            self.hass.async_create_task(self.async_refresh())
             return
         if message.event == LIVE_POSITION_EVENT:
             self._apply_position(payload)

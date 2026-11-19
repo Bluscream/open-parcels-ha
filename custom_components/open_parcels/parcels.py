@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
+import hashlib
 from typing import Any
 
 from .const import (
@@ -133,6 +134,10 @@ def to_suite_parcel(
         "carrier_id": carrier_id or None,
         "direction": parcel.get("direction") or "incoming",
         "label": parcel.get("label"),
+        # The label, else the item names or the code, per the server's setting.
+        "display_name": parcel.get("display_name")
+        or parcel.get("label")
+        or parcel.get("barcode"),
         # The server's `status` is already the effective one; older servers lack
         # `carrier_status` and send the carrier's value as `status`.
         "carrier_status": parcel.get("carrier_status", parcel.get("status")),
@@ -145,6 +150,11 @@ def to_suite_parcel(
         "first_seen_at": parcel.get("first_seen_at"),
         "updated_at": parcel.get("updated_at"),
     }
+
+
+def order_key(shop: str, order_number: str) -> str:
+    """A stable, short key for an order (shop and number), for unique ids."""
+    return hashlib.sha256(f"{shop}\0{order_number}".encode()).hexdigest()[:16]
 
 
 def sort_parcels_by_ts(
